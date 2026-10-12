@@ -118,7 +118,7 @@ func run_tests() -> void:
 	for i in 3:
 		check_eq(side.tabs.get_tab_title(i), ["Production", "Research", "Diplomacy"][i], "tab %d title" % i)
 	check(side.tab_content("Production").get_node_or_null("ProductionPanel") != null, "Production tab filled (step 6)")
-	for t in ["Research", "Diplomacy"]:
+	for t in ["Diplomacy"]:   # Production (step 6) and Research (step 7) are filled
 		check(side.tab_content(t) != null and side.tab_content(t).get_node_or_null("Placeholder") != null, t + " tab has placeholder")
 	side.select_tab("Research")
 	check_eq(side.current_tab_name(), "Research", "select_tab")

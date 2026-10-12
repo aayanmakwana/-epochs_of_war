@@ -19,6 +19,8 @@ var researched: Array[String] = []
 var current_research: String = ""
 ## Days of research done on current_research. (step 7)
 var research_progress: float = 0.0
+## Partial progress (days) of techs that were switched away from: tech id -> days. (step 7)
+var research_saved: Dictionary = {}
 ## Recruitment queue: Array of {"template": String, "province": String, "days_left": int}. (step 8)
 var recruit_queue: Array = []
 ## Diplomacy (step 13). Lists of nation ids.
@@ -48,6 +50,7 @@ func to_dict() -> Dictionary:
 		"researched": Array(researched),
 		"current_research": current_research,
 		"research_progress": research_progress,
+		"research_saved": research_saved.duplicate(),
 		"recruit_queue": recruit_queue.duplicate(true),
 		"at_war_with": Array(at_war_with),
 		"non_aggression": Array(non_aggression),
@@ -78,6 +81,10 @@ static func from_dict(d: Dictionary) -> NationState:
 	n.researched = _strings(d.get("researched", []))
 	n.current_research = String(d.get("current_research", ""))
 	n.research_progress = float(d.get("research_progress", 0.0))
+	n.research_saved = {}
+	var rs: Dictionary = d.get("research_saved", {})
+	for k in rs:
+		n.research_saved[String(k)] = float(rs[k])
 	n.recruit_queue = []
 	for item: Dictionary in d.get("recruit_queue", []):
 		n.recruit_queue.append({
