@@ -83,6 +83,7 @@ The build follows the 20-step Build Order in the design document.
 | 3 | Strategic map rendering | done |
 | 4 | UI shell (top bar, info panel, tabbed side panel, minimap) | done |
 | 5 | Time system (pause, 4 speeds, date display) | done |
-| 6-20 | Production ... polish | pending |
+| 6 | Production (factory assignment, equipment output, resources, factory construction) | done |
+| 7-20 | Research ... polish | pending |
 
 See [`PROGRESS.md`](PROGRESS.md) for details and architecture notes.

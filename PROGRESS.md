@@ -14,7 +14,8 @@ Run all tests: `powershell -ExecutionPolicy Bypass -File tests\run_all.ps1`
 | 3 Strategic map rendering | done | `tests/test_step3_map.gd`: game scene loads, 20 province Polygon2D fills + labels, all 7 layers exist, fills use nation colour (German != Soviet, naval blue), border/coastline segments exist, recolour on `province_changed` after controller change, clicking every anchor selects that province and emits `province_selected`, off-map click clears and emits `selection_cleared`, no holes between polygons, zoom clamped min/max, pan moves + clamped to bounds, `focus_on`, zoom-towards-cursor keeps world point fixed, `build()` rebuild leaves no stale layers |
 | 4 UI shell | done | `tests/test_step4_ui.gd`: HUD under UI, root ignores mouse, panels block it; top bar position/height, date, nation, flag, manpower/oil/steel/factories values + refresh on `nation_changed`/`province_changed`/`day_passed`, 4 speed buttons mirror `speed_changed`; info panel opens on select, province fields (terrain, factories, resources, owner, garrison), garrison button -> division view (stats, orders), back button, naval zone has no buildings, occupied note + rebuild on change, close button clears map selection, off-map click hides, destroyed division falls back; 3 tabs with placeholders, `select_tab`, `clear_tab`, collapse/expand, layout; minimap bottom-right below side panel, transform round trip, whole map fits, click focuses camera, viewport rect follows zoom; injected click on minimap does not select, click on map area does; drag released over a panel ends the drag (no stuck panning); new game refreshes HUD |
 | 5 Time system | done | `tests/test_step5_time.gd`: autoloads present + order, speeds 1/2/3/5, new game resets to paused speed 1 (+ `speed_changed`), paused clock frozen, pause/speed API (clamping, faster/slower, unpause flag) emits `speed_changed`, 1x = 24 h per real second, fractional hours carry over, 1:2:3:5 ratio, per-frame hour cap, hour_passed -> day_passed -> month_passed order, leap year, Simulation ordering/replace/unregister and systems run before `day_passed`, game over freezes + pauses, `time_played`, top bar buttons drive TimeManager and labels follow hour/day, real-time advance at 5x, keyboard shortcuts |
-| 6-20 | pending | |
+| 6 Production system | done | `tests/test_step6_production.gd`: Production autoload + registered daily system; default factory split (17 German factories -> 9/4/4); allocation API clamping (no free factories, 0..assigned+free, unknown equipment); exact one-day numbers (output, steel income/use, manpower +800, `nation_changed`); fractional progress carry-over; oil shortage stalls armor (flag, progress capped at one unit, resumes); production_mult tech; factory build: cost 50 steel, refusals (foreign, naval, occupied, no steel with reason, province cap), completion after `factory_build_days` with `factory_completed`, occupied construction paused; allocation clamped after losing a province; save round trip keeps allocation + queue; capitulated nations skipped; Production tab UI (rows, -/+ buttons, output/stockpile labels, steel balance, build buttons only for owned provinces, build spends steel, construction list, disabled build + tooltip, refresh after a day) |
+| 7-20 | pending | |
 
 ## Architecture
 
@@ -121,6 +122,32 @@ tests/                   test_base.gd harness, test_stepN_*.gd, run_all.ps1, log
   Suggested orders: production 10, research 20, recruitment 30, movement (hourly) 10, combat (hourly) 20, AI 90, autosave 100.
 - TopBar syncs from TimeManager on `_ready` (the start-up `speed_changed` fires before the HUD exists).
 
+### Production (step 6)
+- **Production** autoload (`scripts/autoload/production.gd`, after TimeManager) registers
+  `Simulation.register_daily("production", run_daily, 10)`. Per day, for each non-capitulated nation in `GameData.nation_ids`
+  order: (1) steel/oil income from *controlled* provinces + `colonial_income`; (2) manpower += `manpower_daily` x tech
+  manpower multiplier (**manpower growth lives here; step 8 only spends it**); (3) factory construction counts down
+  only in provinces the nation owns AND controls (occupied = paused), completion -> `ps.factories += 1`,
+  `factory_completed(pid)`, `province_changed(pid)`; (4) equipment: `assigned x production_per_factory x production mult`
+  points/day, every `cost` points = 1 unit if steel/oil in stockpile allows (equipment order infantry_equipment, armor,
+  artillery consumes first). Short -> `shortages[nid][eq] = true`, progress capped at one unit. Then `nation_changed(nid)`.
+- New games: `GameState.new_game` calls `Production.apply_default_allocation(nid)` for every nation
+  (`rules.default_production_split` 50/25/25, remainder to infantry). Loads keep allocations exactly as saved.
+  `sanitize_allocation(nid)` (removes from the last equipment type) runs in `_produce` and on `province_changed`.
+- API: `set_allocation(nid, eq, n)` / `change_allocation(nid, eq, delta)` (clamped, emit `nation_changed`), `allocation`,
+  `allocated_total`, `available_factories` (= `GameState.factory_count`), `free_factories`, `points_per_factory`,
+  `daily_output(nid, eq)`, `daily_resource_use`, `resource_income`, `daily_net`, `manpower_growth`, `affordable_units`,
+  `is_short`, `build_factory_error(nid, pid)` ("" = ok, else reason), `can_build_factory`, `build_factory` (pays
+  `factory_build_cost_steel`, appends `{days_left: factory_build_days}` to `ProvinceState.factory_queue`),
+  `construction_list(nid)` ({province, days_left, paused}), `buildable_provinces(nid)` (owned land provinces).
+- **AI (step 14)** can call the same API for its nations; equipment stockpiles (`NationState.stockpile[eq]`) are what
+  step 8 recruitment spends.
+- UI: `ProductionPanel` (`scripts/ui/production_panel.gd`, `hud.production_panel`) fills the "Production" tab. Built once,
+  refreshed in place at most once per frame (day_passed, nation/province changed, factory_completed, game_state_ready).
+  `equip_rows[eq]` = {minus, plus, assigned, output, stock, shortage}; Shift+click = 5 factories. `resource_labels`
+  (steel/oil balance), `build_buttons[pid]` (disabled with the reason as tooltip), `construction_box` (rebuilt each refresh).
+  **Step 8: add recruitment below the panel's content (or as a section in it) in the same tab.**
+
 ### Autoloads (order matters: later ones may use earlier ones)
 1. **EventBus** (`scripts/autoload/event_bus.gd`): signals only. All signals for later steps are already declared:
    `game_state_ready`, `game_over(result)`, `hour_passed(hour)`, `day_passed(day_index)`, `month_passed(year, month)`,
@@ -185,6 +212,8 @@ All have `to_dict()` / `static from_dict()`; add new fields to both when extendi
 - No functional bugs known.
 - Git prints "CRLF will be replaced by LF" warnings on commit (.gitattributes normalises line endings); harmless.
 - The Fronts / Units / Fog map layers are intentionally empty until steps 10 / 8 / 12.
-- The right panel's three tabs are placeholders until steps 6 / 7 / 13. Speed buttons and the clock work since step 5.
+- The Research and Diplomacy tabs are placeholders until steps 7 / 13 (Production filled in step 6). Speed buttons and the clock work since step 5.
+- Production balance numbers (equipment costs, default split) are first-pass; step 20 balance pass may tune them.
+- Minor nations run the same economy with their default split (no AI changes until step 14).
 - Tests that simulate clicks should use `root.push_input` with the event `position` set. Headless doesn't move the OS cursor,
   so `get_global_mouse_position()` is stale there.
