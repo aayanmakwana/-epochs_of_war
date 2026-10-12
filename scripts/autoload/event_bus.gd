@@ -56,6 +56,8 @@ signal battle_ended(province_id: String, attacker_won: bool)
 signal province_captured(province_id: String, new_controller: String, old_controller: String)
 ## The set of provinces in supply for a nation changed (step 11).
 signal supply_changed(nation_id: String)
+## The set of provinces visible to the player changed (step 12, fog of war).
+signal fog_changed
 
 # --- Diplomacy (step 13) --------------------------------------------------
 signal war_declared(attacker: String, defender: String)
