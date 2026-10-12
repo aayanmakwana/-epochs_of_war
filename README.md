@@ -93,6 +93,7 @@ The build follows the 20-step Build Order in the design document.
 | 13 | Diplomacy (Diplomacy tab: justify a war goal over 30 days, then declare war; non-aggression pacts block war; military access lets divisions move and draw supply through another nation; AI Germany declares war on Poland on 1 Sep 1939 and on France on 10 May 1940) | done |
 | 14 | AI opponent (every non-player nation: factories prioritise infantry equipment > armor > artillery, research infantry > armor > doctrine, recruits infantry when it has manpower and equipment, sends half its divisions to borders facing enemies, attacks when it has 2x the adjacent enemy garrison, never enters tactical mode) | done |
 | 15 | Tactical battle map (seeded 20x20 city grid: street, building, rubble, park, river, bridge, fortification; 3 objectives; attacker deploys south/west, defender north/east; each division splits into 3 tactical units that the player places in the deploy zone; unit list, action bar placeholders, turn counter) | done |
-| 16-20 | Tactical actions, battle flow ... polish | pending |
+| 16 | Tactical unit actions (Start battle; movement points over tile costs; attack; dig in, overrun, barrage; overwatch; one action per unit per phase; End phase with a simple AI opponent; reachable tiles green, targets red) | done |
+| 17-20 | Battle flow, save/load, game flow, polish | pending |
 
 See [`PROGRESS.md`](PROGRESS.md) for details and architecture notes.

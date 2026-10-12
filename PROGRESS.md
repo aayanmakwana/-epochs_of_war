@@ -24,7 +24,8 @@ Run all tests: `powershell -ExecutionPolicy Bypass -File tests\run_all.ps1`
 | 13 Diplomacy | done | `tests/test_step13_diplomacy.gd`: Diplomacy autoload + daily system; `war_goal_days` = 30; nobody at war at start, France "Neutral"; declare refused without war goal (changes nothing); justify on self refused, no double justification, days left, declare blocked while justifying, not ready one day early, ready on day 30, war goal survives save/load; declare -> symmetric `at_war_with`, `war_declared`, goal consumed, no second declaration, Movement sees hostile, no pact/access while at war; cancel justification; pact: accepted at peace, `pact_signed`, both ways, cancels war goal, blocks justification both ways and declaration, no duplicate, break pact re-enables war, save/load; access: grants passability, `military_access_granted(host, guest)`, one way, no duplicate, division moves in via access, war with the host revokes access and sends the division to its capital, revoke; capitulated targets refused; scripted wars: AI Germany at war with Poland on 1 Sep 1939 (not on 31 Aug), France on 10 May 1940 (symmetric), player Germany never forced; UI: placeholder removed, `hud.diplomacy_panel` in tab, one row per other nation (none for the player), status text, declare disabled with reason, Justify -> justifying status + Cancel, Declare enabled when ready and declares war, pact/access disabled at war, pact and access buttons work and status updates |
 | 14 AI opponent | done | `tests/test_step14_ai.gd`: AI autoload + daily system, enabled by default (`rules.ai_enabled`); `is_ai`/`ai_nations` (player and capitulated excluded); `auto_resolves_tactical` true for AI, false for the player; production: all factories to infantry equipment below the reserve, else half infantry equipment / armor / rest artillery (priority order, no idle factories), no armor without light tanks, applied by the daily tick; research: infantry > armor > doctrine via the daily tick, keeps current, idle when tree done, player untouched; recruitment: infantry in the capital paid with manpower, queue cap, nothing without manpower or equipment, divisions appear after training; threats: scripted war opponents within `ai_prepare_days` (not before, not when the attacker is the player), war goal targets; positioning: border set = provinces adjacent to the enemy (independent check), exactly half (rounded up) sent, only to border provinces, spread out, idempotent, divisions arrive, capital not stripped; attack: no attack below 2x the garrison, attack at 2x, none with exhausted org, undefended province attacked, full daily loop: battle_started + Poland captured; player nation's production/research/recruits/divisions untouched for 40 days; `enabled=false` stops it |
 | 15 Tactical battle map | done | `tests/test_step15_tactical_map.gd`: grid size 20 from tactical.json; seed = hash(city id), same city -> identical tiles/objectives, all 5 cities differ; per city: 400 tiles of the 7 types (all 7 seen across cities), river >= 10 tiles, >= 1 bridge, buildings/streets/park/fortifications present, river is a barrier without its bridges; 3 distinct passable objectives outside deploy zones, #1 near the centre, all reachable from both deploy zones (finite path cost); attacker zone south/west, defender north/east, disjoint, NW corner neutral; lookups (building +30%, fortification +50%, rubble half cover + cost 2, river impassable); deployment: 3 tactical units per division with doc stats, HP scaled by division HP, unique ids, auto-deploy on free own tiles with artillery behind, swap, refusals (objective, outside zone, enemy zone, river, off map), withdraw/reserve, overflow to reserve; UI: `tactical_battle_requested` opens the view from game.gd, clock paused, World/HUD hidden + disabled, player side, layout (turn counter top-right, unit list left, 5 disabled action buttons bottom, grid centred), hover info, list select + grid click places, enemy not selectable, To reserve / Auto-deploy, Return restores the strategic view and the Combat battle continues |
-| 16-20 | pending | |
+| 16 Tactical unit actions | done | `tests/test_step16_tactical_actions.gd` (182 checks): `damage_scale` in tactical.json; movement (MP budget, Manhattan only, MP spent, facing, pass own units / blocked by enemies, wrong phase refused); terrain (rubble costs 2, river impassable, crossing only via bridge); attack (range 1 / artillery 3, exact damage 3/6/5, building +30%, weakened attacker, destruction off-map, logged); dig in (+2 defense, lasts until moved); overrun (cheapest tile in range, move + attack in one action, leftover MP kept); barrage (full on target, half on 4 neighbours, no diagonal, no friendly fire); overwatch (fires at the first enemy moving within range, mid-path, can destroy the mover, expires in own phase); one action per unit per turn, reset next turn; TacticalAI smoke on Berlin (8 turns, no stacking, casualties); UI: Start battle, AI attacker first when the player defends, click select, green reachable tiles, click-move, red attack targets, Attack/Dig in/Barrage/Overwatch/Overrun buttons + disabled reasons, End phase -> turn 2 |
+| 17-20 | pending | |
 
 ## Architecture
 
@@ -405,6 +406,51 @@ tests/                   test_base.gd harness, test_stepN_*.gd, run_all.ps1, log
   extend `click_tile` for the battle phase (move/attack targets for `selected_unit`, using `grid.valid_tiles()`-style highlighting —
   generalise `valid_tiles()` to the current action); unit selection already flows through `select_unit` / `unit_selected`, the unit
   list and grid clicks; update `turn_label` via `turn`. Dev screenshot: `tests/screenshot.gd -- --tactical=berlin`.
+
+### Tactical unit actions (step 16)
+- Files: `scripts/tactical/tactical_battle.gd` (`TacticalBattle`, pure, wraps a `TacticalDeployment`),
+  `scripts/tactical/tactical_ai.gd` (`TacticalAI`, pure, static). Both are safe to reference statically in tests.
+  `TacticalUnit` gained per-phase fields `moves_left`, `acted`, `dug_in`, `overwatch`, `destroyed`, const `DIG_IN_DEFENSE` (2),
+  `is_active()` (deployed, alive), `base_defense()` (defense + dig in), `begin_phase()`. `TacticalDeployment.reserve()` skips destroyed units.
+- **Phases**: `TacticalBattle.new(deployment, GameData.tactical)` then `start()` (turn 1, attacker phase, records `start_hp`).
+  `end_phase()` flips `active_side`; turn +1 when the attacker phase starts again. `_begin_phase(side)` resets that side's
+  `moves_left = movement`, `acted = false`, `overwatch = false`. No turn limit / victory yet (step 17).
+- **Movement**: `reachable(uid)` (tile -> cost, Dijkstra on `map.move_cost` within `moves_left`, 4 directions, own units passable,
+  enemies block, cannot end on an occupied tile), `path_to(uid, tile)`, `move_error` / `can_move`, `move_unit(uid, tile)`.
+  Each step spends MP, sets `facing = step direction`, clears `dug_in`, then checks enemy overwatch.
+- **Actions** (one per unit per phase, `acted`): `attack(uid, target_uid)` (Manhattan range, ends movement; returns damage or -1),
+  `dig_in(uid)` (infantry), `overrun(uid, target_uid, via=NO_POS)` (armor: walks to `overrun_tile` = own tile if in range else
+  cheapest reachable tile in range, then attacks; leftover MP kept), `barrage(uid, tile)` (artillery: tile within range, full
+  damage to the enemy there, `splash_damage` = half (min 1) to enemies on the 4 neighbours, no friendly fire, ends movement),
+  `set_overwatch(uid)` (ends movement). Generic: `use_ability(uid, tile)`, `ability_error`, `attack_error`, `overwatch_error`
+  ("" = ok, else reason), `attack_targets`, `overrun_targets`, `barrage_tiles`, `barrage_area(center)`, `ability_name`, `ability_needs_target`.
+- **Overwatch**: after every step of an enemy move, each unit of the other side with `overwatch` and the mover within its range
+  fires once (normal damage, `overwatch` cleared, event `overwatch_fire`). The move continues unless the mover is destroyed.
+  Unused overwatch expires when the watcher's own phase starts.
+- **Damage**: `max(1, round(damage_scale x A x A / (A + D) x attack_multiplier(att, target)))`, A = attack x (0.5 + 0.5 x HP fraction),
+  D = `base_defense()` x (1 + tile defense_bonus). `damage_scale` = `tactical.json` "damage_scale" (1.5). Infantry vs infantry on
+  street = 3, armor vs infantry = 6, artillery vs infantry = 5. 0 HP -> `destroyed`, `pos = NO_POS` (unit stays in the list).
+- Log: `events` (dicts with `kind` move|attack|overrun|barrage|dig_in|overwatch|overwatch_fire|destroyed|phase, `turn`, `text`),
+  `log_lines`, signals `changed`, `event_logged(event)`. Helpers: `unit_at` (active only), `active_units(side)`, `distance`,
+  `in_range`, `effective_attack/defense`, `distance_field(sources)` (bucket Dijkstra, ignores units), `casualty_fraction(div_id)`.
+- **TacticalAI.run_phase(battle, side)**: per unit in id order: armor overruns the weakest reachable enemy; others attack the
+  weakest in range (artillery barrages when enemies are adjacent to each other); else move to the cheapest tile with an enemy in
+  range; attackers otherwise advance (nearest enemy within 6 MP, else nearest objective not held), defenders hold; leftover
+  infantry digs in, others go on overwatch.
+- **UI** (`TacticalView`): `start_button` "Start battle" -> `start_battle()` (`battle`, `phase = "battle"`, `grid.battle`; deployment
+  buttons hidden; if the player defends the AI attacker plays first). `ACTIONS` = Move, Attack, Dig in, Overrun, Barrage, Overwatch,
+  End phase (`action_buttons[name]`, `press_action(name)`, enabled via `action_error(name)`, reason in the tooltip). `action_mode`
+  move|attack|overrun|barrage (`set_action_mode`). `click_tile` in battle -> `_battle_click`: own unit selects; move mode: green tile
+  moves, enemy in range attacks; attack/overrun/barrage modes target the clicked tile. `end_player_phase()` = end phase, AI phase,
+  end phase. `is_player_phase()`, `enemy_side()`, `unit_text(u)` (MP/acted/dug in/overwatch), `log_label` (last 8 lines).
+  `TacticalGrid`: `battle`, `mode`, `valid_tiles()` (deployment placement, or reachable tiles in move mode), `target_tiles()` (red:
+  attack/overrun targets, barrage tiles; barrage hover shows the splash area), dug-in bar / overwatch ring / dimmed spent units.
+- **Step 17 hooks**: turn limit (`turn_limit` in the view; check after `end_phase` when `battle.turn > turn_limit`), flanking (override
+  or extend `TacticalBattle.attack_multiplier` using `target.facing`: front arc = tiles in the facing direction; +`flank_damage_bonus`
+  0.5 from tactical.json), morale (`morale_hp_threshold` 0.3: check in `_begin_phase`, routed units can reuse `_destroy` or a new
+  `routed` flag), victory (all 3 `map.objectives` held by attacker units / one side wiped out), results -> strategic layer
+  (`casualty_fraction(division_id)` for HP loss, emit `tactical_battle_finished`, resolve the Combat battle), and the
+  "Battle for X. Command your forces?" prompt. The AI currently does not care about holding objectives beyond moving to them.
 
 ### Autoloads (order matters: later ones may use earlier ones)
 1. **EventBus** (`scripts/autoload/event_bus.gd`): signals only. All signals for later steps are already declared:
