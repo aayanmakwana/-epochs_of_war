@@ -17,6 +17,10 @@ func run_tests() -> void:
 	check(rec != null, "Recruitment autoload present")
 	if rec == null:
 		return
+	# Exact world state below: AI nations must not recruit on their own (step 14).
+	var ai: Node = autoload("AI")
+	if ai:
+		ai.enabled = false
 	var daily: PackedStringArray = sim.daily_systems()
 	check(daily.has("recruitment"), "recruitment registered as daily system")
 	check(daily.find("research") < daily.find("recruitment"), "recruitment runs after research")
