@@ -20,6 +20,8 @@ const BORDER_NATION := Color(0.06, 0.06, 0.06, 0.95)
 const BORDER_COAST := Color(0.05, 0.1, 0.18, 0.9)
 const HOVER_FILL := Color(1, 1, 1, 0.13)
 const SELECT_LINE := Color(1, 1, 0.75, 1)
+const UNIT_BOX := Vector2(46, 18)
+const UNIT_LETTERS := {"infantry": "I", "armor": "A", "artillery": "R"}
 
 var geometry: MapGeometry
 var camera: MapCamera
@@ -38,6 +40,10 @@ func _ready() -> void:
 	EventBus.game_state_ready.connect(refresh_all)
 	EventBus.province_changed.connect(_on_province_changed)
 	EventBus.selection_cleared.connect(_on_selection_cleared)
+	EventBus.division_created.connect(_on_divisions_changed)
+	EventBus.division_destroyed.connect(_on_divisions_changed)
+	EventBus.division_moved.connect(_on_divisions_changed)
+	EventBus.province_changed.connect(_on_divisions_changed)
 
 
 ## (Re)create all child nodes from the geometry.
@@ -281,8 +287,58 @@ func _draw_fronts(_canvas: CanvasItem) -> void:
 	pass  # Step 10: front lines between provinces of nations at war.
 
 
-func _draw_units(_canvas: CanvasItem) -> void:
-	pass  # Step 8: division icons at GameData.geometry.anchors.
+## Step 8: one counter box per (province, owner) below the city marker,
+## showing the division count and the type letters (I/A/R) in the nation colour.
+## Returns Array of {province, owner, count, letters, rect}.
+func unit_icons() -> Array:
+	var out: Array = []
+	if not GameState.active:
+		return out
+	var by_prov: Dictionary = {}   # pid -> {owner -> Array[DivisionState]}
+	for d: DivisionState in GameState.divisions.values():
+		if not by_prov.has(d.province):
+			by_prov[d.province] = {}
+		var g: Dictionary = by_prov[d.province]
+		if not g.has(d.owner):
+			g[d.owner] = []
+		g[d.owner].append(d)
+	for pid in GameData.province_ids:
+		if not by_prov.has(pid) or not geometry.anchors.has(pid):
+			continue
+		var g: Dictionary = by_prov[pid]
+		var owners: Array = g.keys()
+		owners.sort()
+		var total_w := owners.size() * UNIT_BOX.x + (owners.size() - 1) * 4.0
+		var x0: float = geometry.anchors[pid].x - total_w / 2.0
+		for i in owners.size():
+			var oid: String = owners[i]
+			var letters := ""
+			for tid in GameData.division_ids:
+				for d: DivisionState in g[oid]:
+					if d.template == tid:
+						letters += UNIT_LETTERS.get(tid, tid.substr(0, 1).to_upper())
+						break
+			var pos := Vector2(x0 + i * (UNIT_BOX.x + 4.0), geometry.anchors[pid].y + 26.0)
+			out.append({"province": pid, "owner": oid, "count": g[oid].size(), "letters": letters,
+				"rect": Rect2(pos, UNIT_BOX)})
+	return out
+
+
+func _draw_units(canvas: CanvasItem) -> void:
+	var font := ThemeDB.fallback_font
+	for icon: Dictionary in unit_icons():
+		var r: Rect2 = icon.rect
+		var col := GameData.nation_color(icon.owner)
+		canvas.draw_rect(r.grow(1.5), Color(0, 0, 0, 0.85))
+		canvas.draw_rect(r, col.darkened(0.15))
+		var txt := "%d %s" % [int(icon.count), String(icon.letters)]
+		var text_col := Color.BLACK if col.get_luminance() > 0.55 else Color.WHITE
+		canvas.draw_string(font, Vector2(r.position.x, r.position.y + 14.0), txt,
+			HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 13, text_col)
+
+
+func _on_divisions_changed(_a: Variant = null, _b: Variant = null, _c: Variant = null) -> void:
+	refresh_layer("Units")
 
 
 func _draw_fog(_canvas: CanvasItem) -> void:
