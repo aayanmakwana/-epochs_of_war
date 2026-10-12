@@ -28,6 +28,18 @@ static func run_phase(battle: TacticalBattle, side: String) -> void:
 		act(battle, u)
 
 
+## Let the AI play both sides until the battle ends (turn limit guarantees it).
+## Returns battle.result().
+static func play_out(battle: TacticalBattle, max_phases: int = 1000) -> Dictionary:
+	var n := 0
+	while not battle.is_finished and n < max_phases:
+		run_phase(battle, battle.active_side)
+		if not battle.is_finished:
+			battle.end_phase()
+		n += 1
+	return battle.result()
+
+
 static func _weakest(units: Array[TacticalUnit]) -> TacticalUnit:
 	var best: TacticalUnit = null
 	for t in units:
@@ -93,6 +105,11 @@ static func _move_goal(battle: TacticalBattle, u: TacticalUnit, enemies: Array[T
 	if best != TacticalUnit.NO_POS:
 		return best
 	if u.side == "defender":
+		# Retake a lost objective if one is free and within reach this phase.
+		for i in battle.map.objectives.size():
+			var o: Vector2i = battle.map.objectives[i]
+			if i < battle.objective_owner.size() and battle.objective_owner[i] == "attacker" and reach.has(o):
+				return o
 		return TacticalUnit.NO_POS
 	# Attacker: close in on nearby enemies, else head for the objectives.
 	var enemy_tiles: Array[Vector2i] = []
@@ -101,9 +118,11 @@ static func _move_goal(battle: TacticalBattle, u: TacticalUnit, enemies: Array[T
 	var field := battle.distance_field(enemy_tiles)
 	if int(field.get(u.pos, 1 << 30)) > ENGAGE_DISTANCE:
 		var objs: Array[Vector2i] = []
-		for o in battle.map.objectives:
+		for i in battle.map.objectives.size():
+			var o: Vector2i = battle.map.objectives[i]
+			var owned: bool = i < battle.objective_owner.size() and battle.objective_owner[i] == u.side
 			var occ := battle.unit_at(o)
-			if occ == null or occ.side != u.side:
+			if not owned and (occ == null or occ.side != u.side):
 				objs.append(o)
 		if not objs.is_empty():
 			field = battle.distance_field(objs)

@@ -34,6 +34,8 @@ var dug_in: bool = false
 var overwatch: bool = false
 ## Destroyed (0 HP) units leave the map (pos = NO_POS) and stay in the list for casualty counts.
 var destroyed: bool = false
+## Routed (failed a morale check, step 17): left the battle (pos = NO_POS) but keeps its HP.
+var routed: bool = false
 
 const DIG_IN_DEFENSE := 2
 
@@ -66,7 +68,12 @@ func is_deployed() -> bool:
 
 ## Deployed and not destroyed: on the battlefield.
 func is_active() -> bool:
-	return pos != NO_POS and not destroyed and hp > 0
+	return pos != NO_POS and not destroyed and not routed and hp > 0
+
+
+## Out of the battle for good (destroyed or routed).
+func is_out() -> bool:
+	return destroyed or routed
 
 
 ## Base defense including dig in (terrain is applied by TacticalBattle).

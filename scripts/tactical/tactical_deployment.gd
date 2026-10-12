@@ -59,7 +59,7 @@ func units_of(side: String) -> Array[TacticalUnit]:
 func reserve(side: String) -> Array[TacticalUnit]:
 	var out: Array[TacticalUnit] = []
 	for u in units_of(side):
-		if not u.is_deployed() and not u.destroyed:
+		if not u.is_deployed() and not u.destroyed and not u.routed:
 			out.append(u)
 	return out
 

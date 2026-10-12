@@ -41,11 +41,39 @@ var log_lines: PackedStringArray = []
 ## HP each unit had when the battle started (casualty accounting, step 17).
 var start_hp: Dictionary = {}
 
+# --- Battle flow (step 17) ---
+## Emitted once when the battle ends: winner "attacker" | "defender".
+signal finished(winner: String, reason: String)
+## Defender wins if the attacker has not taken all objectives by the end of this turn.
+var turn_limit: int = 20
+## Extra damage factor when attacking from outside the target's front arc.
+var flank_bonus: float = 0.5
+## Units below this HP fraction roll a morale check at the start of their side's phase.
+var morale_threshold: float = 0.3
+## Probability of passing a morale check.
+var morale_pass_chance: float = 0.5
+var rng := RandomNumberGenerator.new()
+var is_finished: bool = false
+## "attacker" | "defender" once finished.
+var winner: String = ""
+## objectives | defender_eliminated | attacker_eliminated | turn_limit
+var end_reason: String = ""
+## Owner side of each map objective (same order as map.objectives). Last side to
+## stand on it keeps it; all start with the defender.
+var objective_owner: PackedStringArray = []
+## Both sides had units on the map at start (elimination victories need this).
+var contested: bool = false
+
 
 func _init(dep: TacticalDeployment = null, rules: Dictionary = {}) -> void:
 	deployment = dep
 	map = dep.map if dep else null
 	damage_scale = float(rules.get("damage_scale", 1.5))
+	turn_limit = int(rules.get("turn_limit", 20))
+	flank_bonus = float(rules.get("flank_damage_bonus", 0.5))
+	morale_threshold = float(rules.get("morale_hp_threshold", 0.3))
+	morale_pass_chance = float(rules.get("morale_pass_chance", 0.5))
+	rng.seed = int(rules.get("seed", hash(map.city_id if map else "")))
 
 
 ## Begin the battle: turn 1, attacker phase.
@@ -53,13 +81,20 @@ func start() -> void:
 	started = true
 	turn = 1
 	active_side = "attacker"
+	objective_owner = PackedStringArray()
+	for o in map.objectives:
+		objective_owner.append("defender")
 	for u in deployment.units:
 		start_hp[u.id] = u.hp
 		u.moves_left = 0
 		u.acted = false
 		u.overwatch = false
+	for u in deployment.units:
+		if u.is_active():
+			_mark_objective(u)
+	contested = not active_units("attacker").is_empty() and not active_units("defender").is_empty()
 	_begin_phase(active_side)
-	changed.emit()
+	_changed()
 
 
 static func other_side(side: String) -> String:
@@ -67,18 +102,119 @@ static func other_side(side: String) -> String:
 
 
 ## End the active side's phase; the other side's units get fresh movement/actions.
+## After the defender's phase of the last turn the defender wins (turn limit).
 func end_phase() -> void:
+	if is_finished:
+		return
+	if active_side == "defender" and turn >= turn_limit:
+		_finish("defender", "turn_limit")
+		changed.emit()
+		return
 	active_side = other_side(active_side)
 	if active_side == "attacker":
 		turn += 1
 	_begin_phase(active_side)
-	changed.emit()
+	_changed()
 
 
 func _begin_phase(side: String) -> void:
 	for u in deployment.units_of(side):
 		u.begin_phase()
 	_log({kind = "phase", side = side, turn = turn}, "Turn %d: %s phase" % [turn, side.capitalize()])
+	_morale_checks(side)
+
+
+## Morale: every active unit of [param side] under morale_threshold x max HP rolls;
+## a failed check routs it (leaves the battle, keeps its HP).
+func _morale_checks(side: String) -> void:
+	for u in active_units(side):
+		if float(u.hp) >= morale_threshold * float(u.max_hp):
+			continue
+		var roll := rng.randf()
+		if roll < morale_pass_chance:
+			_log({kind = "morale_pass", unit = u.id}, "%s holds (morale check passed)" % _uname(u))
+		else:
+			rout(u)
+
+
+## Remove [param u] from the battle as routed.
+func rout(u: TacticalUnit) -> void:
+	var at := u.pos
+	u.routed = true
+	u.overwatch = false
+	u.dug_in = false
+	u.pos = TacticalUnit.NO_POS
+	_log({kind = "routed", unit = u.id, tile = at}, "%s routs and leaves the battle" % _uname(u))
+
+
+func _changed() -> void:
+	_check_victory()
+	changed.emit()
+
+
+## Objectives currently owned by the attacker.
+func attacker_objectives() -> int:
+	var n := 0
+	for s in objective_owner:
+		if s == "attacker":
+			n += 1
+	return n
+
+
+func _mark_objective(u: TacticalUnit) -> void:
+	if map == null or not map.is_objective(u.pos):
+		return
+	var i := map.objectives.find(u.pos)
+	if i < 0 or i >= objective_owner.size() or objective_owner[i] == u.side:
+		return
+	objective_owner[i] = u.side
+	_log({kind = "objective", unit = u.id, objective = i, side = u.side},
+		"%s takes objective %d" % [_uname(u), i + 1])
+
+
+## End the battle if a side has won.
+func _check_victory() -> void:
+	if not started or is_finished:
+		return
+	if not objective_owner.is_empty() and attacker_objectives() == objective_owner.size():
+		_finish("attacker", "objectives")
+	elif not contested:
+		return   # one side never had units on the map (test setups): no elimination victory
+	elif active_units("attacker").is_empty():
+		_finish("defender", "attacker_eliminated")
+	elif active_units("defender").is_empty():
+		_finish("attacker", "defender_eliminated")
+
+
+func _finish(w: String, reason: String) -> void:
+	if is_finished:
+		return
+	is_finished = true
+	winner = w
+	end_reason = reason
+	var why: String = {"objectives": "all objectives taken", "defender_eliminated": "defenders eliminated",
+		"attacker_eliminated": "attackers eliminated", "turn_limit": "turn limit reached"}.get(reason, reason)
+	_log({kind = "victory", side = w, reason = reason}, "%s wins (%s)" % [w.capitalize(), why])
+	finished.emit(w, reason)
+
+
+## Division ids per side: {"attacker": [...], "defender": [...]}.
+func divisions() -> Dictionary:
+	var out := {"attacker": [], "defender": []}
+	for u in deployment.units:
+		if u.division_id >= 0 and not out[u.side].has(u.division_id):
+			out[u.side].append(u.division_id)
+	return out
+
+
+## Outcome: {finished, winner, attacker_won, reason, turn, objectives, casualties: {division id: 0..1}}.
+func result() -> Dictionary:
+	var cas := {}
+	for side in ["attacker", "defender"]:
+		for did in divisions()[side]:
+			cas[did] = casualty_fraction(did)
+	return {"finished": is_finished, "winner": winner, "attacker_won": winner == "attacker",
+		"reason": end_reason, "turn": turn, "objectives": attacker_objectives(), "casualties": cas}
 
 
 # --- Queries -------------------------------------------------------------------
@@ -120,9 +256,27 @@ func effective_attack(u: TacticalUnit) -> float:
 	return u.attack * (0.5 + 0.5 * float(u.hp) / maxf(1.0, float(u.max_hp)))
 
 
-## Extra damage factor. 1.0 in step 16; step 17 flanking overrides/extends this.
-func attack_multiplier(_attacker: TacticalUnit, _target: TacticalUnit) -> float:
-	return 1.0
+## True if [param p] lies in the front arc of [param u]: the 3 tiles ahead in its
+## facing (straight ahead and the two forward diagonals) and the 90-degree cone
+## they open further out (so ranged fire from straight ahead is frontal too).
+static func in_front_arc(u: TacticalUnit, p: Vector2i) -> bool:
+	var f := u.facing
+	if f == Vector2i.ZERO:
+		return true
+	var rel := p - u.pos
+	var ahead := rel.x * f.x + rel.y * f.y
+	var across := absi(rel.x * f.y - rel.y * f.x)
+	return ahead > 0 and across <= ahead
+
+
+## Attack from outside the target's front arc (step 17).
+func is_flanking(attacker: TacticalUnit, target: TacticalUnit) -> bool:
+	return not in_front_arc(target, attacker.pos)
+
+
+## Extra damage factor: 1 + flank_bonus when flanking, else 1.
+func attack_multiplier(attacker: TacticalUnit, target: TacticalUnit) -> float:
+	return 1.0 + flank_bonus if is_flanking(attacker, target) else 1.0
 
 
 ## Damage [param attacker] deals to [param target] with a normal attack.
@@ -201,6 +355,8 @@ func path_to(uid: int, target: Vector2i) -> Array[Vector2i]:
 func _phase_error(u: TacticalUnit) -> String:
 	if not started:
 		return "The battle has not started"
+	if is_finished:
+		return "The battle is over"
 	if u == null or u.destroyed:
 		return "No such unit"
 	if not u.is_active():
@@ -241,7 +397,7 @@ func move_unit(uid: int, target: Vector2i) -> bool:
 	if not can_move(uid, target):
 		return false
 	_walk(unit(uid), path_to(uid, target))
-	changed.emit()
+	_changed()
 	return true
 
 
@@ -256,6 +412,7 @@ func _walk(u: TacticalUnit, path: Array[Vector2i]) -> void:
 		_check_overwatch(u)
 		if u.destroyed:
 			break
+		_mark_objective(u)
 	if u.pos != from or u.destroyed:
 		_log({kind = "move", unit = u.id, from = from, to = u.pos if not u.destroyed else from},
 			"%s moves (%d,%d) -> (%d,%d)" % [_uname(u), from.x, from.y, u.pos.x, u.pos.y] if not u.destroyed
@@ -326,14 +483,16 @@ func attack(uid: int, target_uid: int) -> int:
 	var dmg := _strike(u, unit(target_uid), "attack")
 	u.acted = true
 	u.moves_left = 0
-	changed.emit()
+	_changed()
 	return dmg
 
 
 func _strike(u: TacticalUnit, t: TacticalUnit, kind: String) -> int:
 	var dmg := damage(u, t)
-	_log({kind = kind, unit = u.id, target = t.id, damage = dmg},
-		"%s %s %s: -%d HP" % [_uname(u), "overruns" if kind == "overrun" else "attacks", _uname(t), dmg])
+	var flank := is_flanking(u, t)
+	_log({kind = kind, unit = u.id, target = t.id, damage = dmg, flank = flank},
+		"%s %s %s: -%d HP%s" % [_uname(u), "overruns" if kind == "overrun" else "attacks", _uname(t), dmg,
+		" (flank)" if flank else ""])
 	_apply_damage(t, dmg)
 	return dmg
 
@@ -410,7 +569,7 @@ func dig_in(uid: int) -> bool:
 	u.dug_in = true
 	u.acted = true
 	_log({kind = "dig_in", unit = u.id}, "%s digs in (+%d defense)" % [_uname(u), TacticalUnit.DIG_IN_DEFENSE])
-	changed.emit()
+	_changed()
 	return true
 
 
@@ -466,7 +625,7 @@ func overrun(uid: int, target_uid: int, via: Vector2i = TacticalUnit.NO_POS) -> 
 		_walk(u, path_to(uid, tile))
 	if not u.destroyed and t.is_active() and in_range(u, t.pos):
 		_strike(u, t, "overrun")
-	changed.emit()
+	_changed()
 	return true
 
 
@@ -510,7 +669,7 @@ func barrage(uid: int, target: Vector2i) -> bool:
 		"%s barrages (%d,%d): %d unit(s) hit" % [_uname(u), target.x, target.y, hits.size()])
 	for h in hits:
 		_apply_damage(unit(h.unit), h.damage)
-	changed.emit()
+	_changed()
 	return true
 
 
@@ -527,7 +686,7 @@ func set_overwatch(uid: int) -> bool:
 	u.acted = true
 	u.moves_left = 0
 	_log({kind = "overwatch", unit = u.id}, "%s on overwatch" % _uname(u))
-	changed.emit()
+	_changed()
 	return true
 
 

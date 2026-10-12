@@ -22,7 +22,7 @@ func make_battle(m: TacticalMap) -> TacticalBattle:
 	var dep := TacticalDeployment.new(m)
 	dep.attacker = "germany"
 	dep.defender = "ussr"
-	return TacticalBattle.new(dep, {"damage_scale": 1.5})
+	return TacticalBattle.new(dep, {"damage_scale": 1.5, "flank_damage_bonus": 0.0})
 
 
 func add(b: TacticalBattle, side: String, type: String, pos: Vector2i) -> TacticalUnit:
@@ -511,9 +511,11 @@ func test_ai() -> void:
 	for u in dep.units:
 		start_pos[u.id] = u.pos
 	for i in 16:
+		if b.is_finished:
+			break
 		TacticalAI.run_phase(b, b.active_side)
 		b.end_phase()
-	check_eq(b.turn, 9, "8 full turns played")
+	check(b.turn == 9 or b.is_finished, "8 full turns played (or the battle ended, step 17)")
 	var moved := dep.units_of("attacker").filter(func(u): return u.destroyed or u.pos != start_pos[u.id])
 	check(moved.size() > 0, "AI attackers advance")
 	check(b.events.any(func(e): return e.kind in ["attack", "overrun", "barrage", "overwatch_fire"]), "AI fights")
