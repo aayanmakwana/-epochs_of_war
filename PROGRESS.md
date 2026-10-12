@@ -26,6 +26,7 @@ Run all tests: `powershell -ExecutionPolicy Bypass -File tests\run_all.ps1`
 | 15 Tactical battle map | done | `tests/test_step15_tactical_map.gd`: grid size 20 from tactical.json; seed = hash(city id), same city -> identical tiles/objectives, all 5 cities differ; per city: 400 tiles of the 7 types (all 7 seen across cities), river >= 10 tiles, >= 1 bridge, buildings/streets/park/fortifications present, river is a barrier without its bridges; 3 distinct passable objectives outside deploy zones, #1 near the centre, all reachable from both deploy zones (finite path cost); attacker zone south/west, defender north/east, disjoint, NW corner neutral; lookups (building +30%, fortification +50%, rubble half cover + cost 2, river impassable); deployment: 3 tactical units per division with doc stats, HP scaled by division HP, unique ids, auto-deploy on free own tiles with artillery behind, swap, refusals (objective, outside zone, enemy zone, river, off map), withdraw/reserve, overflow to reserve; UI: `tactical_battle_requested` opens the view from game.gd, clock paused, World/HUD hidden + disabled, player side, layout (turn counter top-right, unit list left, 5 disabled action buttons bottom, grid centred), hover info, list select + grid click places, enemy not selectable, To reserve / Auto-deploy, Return restores the strategic view and the Combat battle continues |
 | 16 Tactical unit actions | done | `tests/test_step16_tactical_actions.gd` (182 checks): `damage_scale` in tactical.json; movement (MP budget, Manhattan only, MP spent, facing, pass own units / blocked by enemies, wrong phase refused); terrain (rubble costs 2, river impassable, crossing only via bridge); attack (range 1 / artillery 3, exact damage 3/6/5, building +30%, weakened attacker, destruction off-map, logged); dig in (+2 defense, lasts until moved); overrun (cheapest tile in range, move + attack in one action, leftover MP kept); barrage (full on target, half on 4 neighbours, no diagonal, no friendly fire); overwatch (fires at the first enemy moving within range, mid-path, can destroy the mover, expires in own phase); one action per unit per turn, reset next turn; TacticalAI smoke on Berlin (8 turns, no stacking, casualties); UI: Start battle, AI attacker first when the player defends, click select, green reachable tiles, click-move, red attack targets, Attack/Dig in/Barrage/Overwatch/Overrun buttons + disabled reasons, End phase -> turn 2 |
 | 17 Tactical battle flow | done | `tests/test_step17_tactical_flow.gd`: flanking (front arc = 3 tiles ahead + their cone, sides/rear flank, x1.5 damage, log marks it, facing follows moves); 20-turn limit (defender wins after turn 20 defender phase, finished emitted once, no orders afterwards, limit read from rules); objectives (start defender-owned, last owner keeps, defender recaptures, all 3 -> attacker wins); elimination wins (only when both sides started on the map); morale (below 30% HP rolls at own phase start, rout keeps HP, leaves the map, not in reserve, seeded determinism, all attackers routed -> defender wins); result() casualties per division; AI play-out in Berlin/London finishes within 20 turns. `tests/test_step17_strategic_link.gd`: AI attack on the player's Berlin raises the prompt (paused clock, dialog text, Yes/No), non-city provinces never prompt, No auto-resolves + resumes, Yes flags the battle tactical (no daily ticks) and opens the view, finishing applies the result, emits tactical_battle_finished, closes the view and resumes; early exit hands back to auto-resolve; apply_tactical_result attacker win (capture, proportional + heavy loss, defenders retreat) and defender win (attacker halted in origin, proportional + moderate loss) |
+| 18 Save/load | done | `tests/test_step18_saveload.gd`: save_game/load_game round-trip (player_nation, day_index, hour, province controller), has_save, autosave after autosave_interval_days, missing-slot returns false, saved/loaded signals, JSON round-trip for key fields |
 | 17-20 | pending | |
 
 ## Architecture
@@ -538,3 +539,21 @@ All have `to_dict()` / `static from_dict()`; add new fields to both when extendi
   The AI re-sets its factory allocation daily, so manual changes to AI nations' allocation are overwritten.
 - Tests that simulate clicks should use `root.push_input` with the event `position` set. Headless doesn't move the OS cursor,
   so `get_global_mouse_position()` is stale there.
+
+### Save / Load (step 18)
+- **SaveLoad** autoload (`scripts/autoload/save_load.gd`, after AI, order 95).
+  Saves `GameState.to_dict()` as pretty-printed JSON to `user://saves/<slot>.json`
+  (`DirAccess.make_dir_recursive_absolute` creates the folder on first save).
+  `save_game(slot="manual")` → bool, `load_game(slot="manual")` → bool,
+  `has_save(slot)` → bool. Constants `AUTOSAVE_SLOT = "auto"`, `MANUAL_SLOT = "manual"`.
+  Signals: `saved(slot)`, `loaded(slot)`, `save_error(slot, reason)`.
+- **Autosave**: listens to `EventBus.day_passed`; counts elapsed days; calls
+  `save_game("auto")` every `rules.autosave_interval_days` (30) in-game days.
+  Counter resets on `game_state_ready`. Skipped when `GameState.game_over`.
+- **Pause menu**: `game.gd` handles `KEY_ESCAPE` in `_unhandled_input` (only when
+  no tactical view is open). First press builds a `CanvasLayer` (layer 20) with a
+  semi-transparent `ColorRect` containing a `VBoxContainer` with **Save Game**,
+  **Load Game** and **Resume** buttons; subsequent presses toggle visibility.
+  Save → `SaveLoad.save_game()`. Load → `SaveLoad.load_game()` then hides the menu.
+  Resume → hides the menu. `show_pause_menu()` / `hide_pause_menu()` are public.
+  `pause_menu` field points to the root `ColorRect` (or null before first open).

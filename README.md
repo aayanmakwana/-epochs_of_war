@@ -95,6 +95,7 @@ The build follows the 20-step Build Order in the design document.
 | 15 | Tactical battle map (seeded 20x20 city grid: street, building, rubble, park, river, bridge, fortification; 3 objectives; attacker deploys south/west, defender north/east; each division splits into 3 tactical units that the player places in the deploy zone; unit list, action bar placeholders, turn counter) | done |
 | 16 | Tactical unit actions (Start battle; movement points over tile costs; attack; dig in, overrun, barrage; overwatch; one action per unit per phase; End phase with a simple AI opponent; reachable tiles green, targets red) | done |
 | 17 | Tactical battle flow (20-turn limit, objectives, +50% flanking damage outside the front arc, morale checks below 30% HP rout units, victory/defeat; a "Battle for [City]. Command your forces?" prompt for major-city battles involving the player; tactical casualties and the outcome are applied to the strategic divisions and province) | done |
-| 18-20 | Save/load, game flow, polish | pending |
+| 18 | Save/load (SaveLoad autoload, autosave every 30 days, pause menu) | done |
+| 19-20 | Game flow, polish | pending |
 
 See [`PROGRESS.md`](PROGRESS.md) for details and architecture notes.
