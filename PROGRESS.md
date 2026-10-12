@@ -15,7 +15,8 @@ Run all tests: `powershell -ExecutionPolicy Bypass -File tests\run_all.ps1`
 | 4 UI shell | done | `tests/test_step4_ui.gd`: HUD under UI, root ignores mouse, panels block it; top bar position/height, date, nation, flag, manpower/oil/steel/factories values + refresh on `nation_changed`/`province_changed`/`day_passed`, 4 speed buttons mirror `speed_changed`; info panel opens on select, province fields (terrain, factories, resources, owner, garrison), garrison button -> division view (stats, orders), back button, naval zone has no buildings, occupied note + rebuild on change, close button clears map selection, off-map click hides, destroyed division falls back; 3 tabs with placeholders, `select_tab`, `clear_tab`, collapse/expand, layout; minimap bottom-right below side panel, transform round trip, whole map fits, click focuses camera, viewport rect follows zoom; injected click on minimap does not select, click on map area does; drag released over a panel ends the drag (no stuck panning); new game refreshes HUD |
 | 5 Time system | done | `tests/test_step5_time.gd`: autoloads present + order, speeds 1/2/3/5, new game resets to paused speed 1 (+ `speed_changed`), paused clock frozen, pause/speed API (clamping, faster/slower, unpause flag) emits `speed_changed`, 1x = 24 h per real second, fractional hours carry over, 1:2:3:5 ratio, per-frame hour cap, hour_passed -> day_passed -> month_passed order, leap year, Simulation ordering/replace/unregister and systems run before `day_passed`, game over freezes + pauses, `time_played`, top bar buttons drive TimeManager and labels follow hour/day, real-time advance at 5x, keyboard shortcuts |
 | 6 Production system | done | `tests/test_step6_production.gd`: Production autoload + registered daily system; default factory split (17 German factories -> 9/4/4); allocation API clamping (no free factories, 0..assigned+free, unknown equipment); exact one-day numbers (output, steel income/use, manpower +800, `nation_changed`); fractional progress carry-over; oil shortage stalls armor (flag, progress capped at one unit, resumes); production_mult tech; factory build: cost 50 steel, refusals (foreign, naval, occupied, no steel with reason, province cap), completion after `factory_build_days` with `factory_completed`, occupied construction paused; allocation clamped after losing a province; save round trip keeps allocation + queue; capitulated nations skipped; Production tab UI (rows, -/+ buttons, output/stockpile labels, steel balance, build buttons only for owned provinces, build spends steel, construction list, disabled build + tooltip, refresh after a day) |
-| 7-20 | pending | |
+| 7 Research system | done | `tests/test_step7_research.gd`: Research autoload + daily system after production; statuses (researched/available/locked) and refusal reasons (prerequisite, done, unknown, already researching, capitulated); available techs + branch progress; exact 30-day completion with `research_started`/`research_completed`/player `notify`, nothing one day early; light tanks unlocks armor; medium tanks armor attack +15%; switching keeps partial progress in `research_saved`, stop keeps progress, no progress while idle, resume; save round trip (current, progress, saved partials, researched); AI/minor nations research in parallel, capitulated skipped, no notify for AI; total war production +15%; Research tab UI (3-column grid, branch headers, tier layout, 15 buttons, Done/locked tooltips, click starts research, current tech label + progress bar + days left, per-button bar, template stats refresh, stop button) |
+| 8-20 | pending | |
 
 ## Architecture
 
@@ -148,6 +149,25 @@ tests/                   test_base.gd harness, test_stepN_*.gd, run_all.ps1, log
   (steel/oil balance), `build_buttons[pid]` (disabled with the reason as tooltip), `construction_box` (rebuilt each refresh).
   **Step 8: add recruitment below the panel's content (or as a section in it) in the same tab.**
 
+### Research (step 7)
+- **Research** autoload (`scripts/autoload/research.gd`, after Production) registers
+  `Simulation.register_daily("research", run_daily, 20)`. One tech at a time per nation: each day every non-capitulated
+  nation with `current_research` adds `rules.research_speed` (1.0) days to `research_progress`; at the tech's `days` the
+  tech is appended to `NationState.researched`, current cleared, `research_completed(nid, tid)` + `nation_changed(nid)`
+  emitted (+ `notify("Research complete: ...")` for the player). Effects need no code: `TechEffects` reads `researched`.
+- Switching or stopping shelves partial progress in **`NationState.research_saved`** (tech -> days, new field, saved);
+  picking that tech again resumes it.
+- API: `start_research(nid, tid)` (bool; emits `research_started`), `cancel_research(nid)`, `research_error(nid, tid)`
+  ("" = ok, else reason), `can_research`, `status(nid, tid)` ("researched"|"researching"|"available"|"locked"),
+  `current(nid)`, `progress_days`, `progress_fraction(nid, tid="")`, `days_left(nid, tid="")`, `tech_days`, `tech_name`,
+  `available_techs(nid)` (branch order, then tier), `branch_progress(nid, branch)` {done, total}, `is_researched`.
+  **AI (step 14)**: call `available_techs` / `start_research` (doc order infantry > armor > doctrine).
+- `GameData.techs_in_branch(branch)` returns a PackedStringArray of **ids** (not dicts).
+- UI: `ResearchPanel` (`scripts/ui/research_panel.gd`, `hud.research_panel`) fills the "Research" tab: current tech
+  (`current_name`, `current_bar`, `current_days`, `stop_button`), `TechGrid` (GridContainer, 3 columns = branches, header
+  row then tiers), `tech_cards[tid]` = {card, button, bar} (button coloured by status, description + reason in tooltip),
+  `template_labels[division]` with effective stats / lock state. Refreshed in place at most once per frame.
+
 ### Autoloads (order matters: later ones may use earlier ones)
 1. **EventBus** (`scripts/autoload/event_bus.gd`): signals only. All signals for later steps are already declared:
    `game_state_ready`, `game_over(result)`, `hour_passed(hour)`, `day_passed(day_index)`, `month_passed(year, month)`,
@@ -212,7 +232,7 @@ All have `to_dict()` / `static from_dict()`; add new fields to both when extendi
 - No functional bugs known.
 - Git prints "CRLF will be replaced by LF" warnings on commit (.gitattributes normalises line endings); harmless.
 - The Fronts / Units / Fog map layers are intentionally empty until steps 10 / 8 / 12.
-- The Research and Diplomacy tabs are placeholders until steps 7 / 13 (Production filled in step 6). Speed buttons and the clock work since step 5.
+- The Diplomacy tab is a placeholder until step 13 (Production filled in step 6, Research in step 7). AI nations do not pick research until step 14. Speed buttons and the clock work since step 5.
 - Production balance numbers (equipment costs, default split) are first-pass; step 20 balance pass may tune them.
 - Minor nations run the same economy with their default split (no AI changes until step 14).
 - Tests that simulate clicks should use `root.push_input` with the event `position` set. Headless doesn't move the OS cursor,
