@@ -23,6 +23,20 @@ var ability: String = ""
 ## Direction the unit last moved (front arc, step 17 flanking). Starts facing the enemy.
 var facing: Vector2i = Vector2i.ZERO
 
+# --- Per-turn battle state (step 16) ---
+## Movement points left this phase (reset to `movement` at the start of the side's phase).
+var moves_left: int = 0
+## True once the unit used its one action (attack, ability or overwatch) this phase.
+var acted: bool = false
+## Infantry "dig in": +DIG_IN_DEFENSE defense until the unit moves.
+var dug_in: bool = false
+## Overwatch: fires at the first enemy that moves within range during the enemy phase.
+var overwatch: bool = false
+## Destroyed (0 HP) units leave the map (pos = NO_POS) and stay in the list for casualty counts.
+var destroyed: bool = false
+
+const DIG_IN_DEFENSE := 2
+
 
 ## Build from a unit stats dict (GameData.tactical.units[type]). Starting HP is
 ## scaled by the strategic division's HP fraction (at least 1).
@@ -48,6 +62,23 @@ static func create(uid: int, unit_type: String, stats: Dictionary, unit_side: St
 
 func is_deployed() -> bool:
 	return pos != NO_POS
+
+
+## Deployed and not destroyed: on the battlefield.
+func is_active() -> bool:
+	return pos != NO_POS and not destroyed and hp > 0
+
+
+## Base defense including dig in (terrain is applied by TacticalBattle).
+func base_defense() -> int:
+	return defense + (DIG_IN_DEFENSE if dug_in else 0)
+
+
+## Reset the per-phase fields at the start of this unit's side's phase.
+func begin_phase() -> void:
+	moves_left = movement
+	acted = false
+	overwatch = false
 
 
 ## Map letter: I / A / R.

@@ -5,6 +5,7 @@
 	"objectives": 3,
 	"flank_damage_bonus": 0.5,
 	"morale_hp_threshold": 0.3,
+	"damage_scale": 1.5,
 	"tiles": {
 		"street":        { "name": "Street",        "color": "#8a8578", "move_cost": 1, "defense_bonus": 0.0,  "passable": true },
 		"building":      { "name": "Building",      "color": "#5d5a55", "move_cost": 1, "defense_bonus": 0.3,  "passable": true },
