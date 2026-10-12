@@ -86,6 +86,7 @@ The build follows the 20-step Build Order in the design document.
 | 6 | Production (factory assignment, equipment output, resources, factory construction) | done |
 | 7 | Research (15 techs in 3 branches, one at a time, progress bar, effects) | done |
 | 8 | Military recruitment (recruit from the Production tab, training queue, unit icons on the map) | done |
-| 9-20 | Movement ... polish | pending |
+| 9 | Division movement (select a division, click/right-click a destination, paths through friendly territory, travel time by speed and terrain, movement arrows) | done |
+| 10-20 | Combat ... polish | pending |
 
 See [`PROGRESS.md`](PROGRESS.md) for details and architecture notes.
