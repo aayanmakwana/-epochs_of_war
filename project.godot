@@ -30,6 +30,7 @@ Movement="*res://scripts/autoload/movement.gd"
 Combat="*res://scripts/autoload/combat.gd"
 Supply="*res://scripts/autoload/supply.gd"
 Fog="*res://scripts/autoload/fog.gd"
+Diplomacy="*res://scripts/autoload/diplomacy.gd"
 
 [display]
 

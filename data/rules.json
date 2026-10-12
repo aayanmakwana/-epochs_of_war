@@ -30,5 +30,11 @@
 	"entrenchment_defense_bonus": 0.25,
 	"org_recovery_per_day": 0.1,
 	"hp_recovery_per_day": 0.02,
-	"major_city_count": 5
+	"major_city_count": 5,
+	"_diplomacy_comment": "Diplomacy (step 13): fabricating a war goal takes war_goal_days days. scripted_wars are historical declarations made by AI-controlled attackers on that date (skipped if the attacker is the player, already at war, or either side capitulated).",
+	"war_goal_days": 30,
+	"scripted_wars": [
+		{ "date": [1939, 9, 1], "attacker": "germany", "defender": "poland" },
+		{ "date": [1940, 5, 10], "attacker": "germany", "defender": "france" }
+	]
 }
