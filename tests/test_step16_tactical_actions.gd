@@ -47,6 +47,197 @@ func run_tests() -> void:
 	test_overwatch()
 	test_one_action()
 	test_ai()
+	await test_ui()
+
+
+func free_adjacent(b: TacticalBattle, p: Vector2i, exclude: Array = []) -> Vector2i:
+	for n in b.map.neighbors(p):
+		if b.map.is_passable(n) and b.unit_at(n) == null and not exclude.has(n):
+			return n
+	return NO_POS
+
+
+func click(view, t: Vector2i) -> void:
+	var ev := InputEventMouseButton.new()
+	ev.button_index = MOUSE_BUTTON_LEFT
+	ev.pressed = true
+	ev.position = view.grid.tile_center(t)
+	view.grid._gui_input(ev)
+
+
+func test_ui() -> void:
+	var gs: Node = autoload("GameState")
+	var bus: Node = autoload("EventBus")
+	autoload("AI").enabled = false
+	gs.new_game("germany")
+	var game: Node = (load("res://scenes/game/game.tscn") as PackedScene).instantiate()
+	root.add_child(game)
+	await process_frame
+	gs.nation("germany").at_war_with.append("ussr")
+	gs.nation("ussr").at_war_with.append("germany")
+	var defenders: Array = gs.divisions_in("berlin").filter(func(d): return d.owner == "germany")
+	gs.add_division("artillery", "germany", "berlin")
+	var att1 = gs.add_division("armor", "ussr", "poland")
+	var att2 = gs.add_division("infantry", "ussr", "poland")
+	var cb: Node = autoload("Combat")
+	for d in [att1, att2]:
+		d.path.assign(["berlin"])
+		d.move_progress = 1.0
+		cb._on_hostile_entry(d, "berlin")
+	bus.tactical_battle_requested.emit("berlin")
+	await process_frame
+	var view = game.tactical_view
+	check(view != null, "tactical view open")
+	if view == null:
+		return
+	check_eq(view.player_side, "defender", "player defends Berlin")
+	for a in ["Move", "Attack", "Dig in", "Overrun", "Barrage", "Overwatch", "End phase"]:
+		check(view.action_buttons.has(a), "action button " + a)
+	check(view.action_buttons["End phase"].disabled, "actions disabled during deployment")
+	check(view.start_button.visible, "Start battle button shown during deployment")
+	view.start_button.pressed.emit()
+	var b: TacticalBattle = view.battle
+	check(b != null and view.phase == "battle", "Start battle creates the battle")
+	check(view.is_player_phase(), "AI attacker played its phase, now the player's (defender) phase")
+	check_eq(b.turn, 1, "still turn 1")
+	check(b.events.any(func(e): return e.kind == "phase" and e.side == "attacker"), "attacker phase logged")
+	check(not view.start_button.visible and not view.auto_deploy_button.visible, "deployment controls hidden")
+	check(not view.action_buttons["End phase"].disabled, "End phase enabled")
+	check(view.action_buttons["Move"].disabled, "Move disabled without a selection")
+	check(view.log_label.text != "", "battle log shown")
+	# Pick an infantry squad that can move.
+	var inf: TacticalUnit = null
+	for u in b.active_units("defender"):
+		if u.type == "infantry" and not b.reachable(u.id).is_empty():
+			inf = u
+			break
+	check(inf != null, "a player infantry squad can move")
+	if inf == null:
+		return
+	click(view, inf.pos)
+	check_eq(view.selected_unit, inf.id, "clicking a unit selects it")
+	var green: Array = view.grid.valid_tiles()
+	check(green.size() > 0 and green.size() == b.reachable(inf.id).size(), "reachable tiles highlighted")
+	check(not view.action_buttons["Move"].disabled, "Move enabled")
+	check(view.action_buttons["Overrun"].disabled and view.action_buttons["Overrun"].tooltip_text.contains("armor"), "Overrun only for armor")
+	check(view.action_buttons["Barrage"].disabled, "Barrage only for artillery")
+	var dest: Vector2i = green[0]
+	var cost: int = b.reachable(inf.id)[dest]
+	click(view, dest)
+	check_eq(inf.pos, dest, "click on a green tile moves the unit")
+	check_eq(inf.moves_left, 3 - cost, "movement points spent")
+	check(view.unit_buttons[inf.id].text.contains("MP %d" % inf.moves_left), "unit list shows MP")
+	# Attack: bring an enemy next to the squad.
+	var enemy: TacticalUnit = b.active_units("attacker")[0]
+	var adj := free_adjacent(b, inf.pos)
+	enemy.pos = adj
+	view.select_unit(inf.id)
+	check(view.grid.target_tiles().has(adj), "attackable enemy highlighted red")
+	check(not view.action_buttons["Attack"].disabled, "Attack enabled with an enemy in range")
+	view.action_buttons["Attack"].pressed.emit()
+	check_eq(view.action_mode, "attack", "Attack button sets attack mode")
+	var hp0 := enemy.hp
+	click(view, adj)
+	check(enemy.hp < hp0 or enemy.destroyed, "clicking the enemy attacks it")
+	check(inf.acted, "action used")
+	check(view.action_buttons["Attack"].disabled and view.action_buttons["Dig in"].disabled and view.action_buttons["Overwatch"].disabled,
+		"no second action this turn")
+	# Dig in on another infantry squad.
+	var inf2: TacticalUnit = null
+	for u in b.active_units("defender"):
+		if u.type == "infantry" and u != inf:
+			inf2 = u
+			break
+	if inf2 != null:
+		view.select_unit(inf2.id)
+		check(not view.action_buttons["Dig in"].disabled, "Dig in enabled for infantry")
+		view.action_buttons["Dig in"].pressed.emit()
+		check(inf2.dug_in and inf2.acted, "Dig in button digs in")
+	# Barrage with the artillery.
+	var art: TacticalUnit = null
+	for u in b.active_units("defender"):
+		if u.type == "artillery":
+			art = u
+			break
+	check(art != null, "player artillery present")
+	if art != null:
+		var foe2: TacticalUnit = null
+		for u in b.active_units("attacker"):
+			if u != enemy:
+				foe2 = u
+				break
+		var spot := NO_POS
+		for y in b.map.size:
+			for x in b.map.size:
+				var p := Vector2i(x, y)
+				if spot == NO_POS and p != art.pos and TacticalBattle.distance(p, art.pos) <= 3 and b.map.is_passable(p) and b.unit_at(p) == null:
+					spot = p
+		foe2.pos = spot
+		view.select_unit(art.id)
+		check(not view.action_buttons["Barrage"].disabled, "Barrage enabled for artillery")
+		view.action_buttons["Barrage"].pressed.emit()
+		check(view.grid.target_tiles().has(spot), "barrage tiles highlighted")
+		var hp1 := foe2.hp
+		click(view, spot)
+		check(foe2.hp < hp1 or foe2.destroyed, "barrage click damages the enemy")
+		check(art.acted, "barrage used the action")
+	# Overwatch on any unit that has not acted.
+	var idle: TacticalUnit = null
+	for u in b.active_units("defender"):
+		if not u.acted:
+			idle = u
+			break
+	if idle != null:
+		view.select_unit(idle.id)
+		view.action_buttons["Overwatch"].pressed.emit()
+		check(idle.overwatch, "Overwatch button sets overwatch")
+	# End phase: AI attacker plays, then the player again.
+	view.action_buttons["End phase"].pressed.emit()
+	check_eq(b.turn, 2, "End phase -> enemy phase -> turn 2")
+	check(view.is_player_phase(), "control returns to the player")
+	check_eq(view.turn_label.text, "Turn 2 / 20", "turn counter updated")
+	check(b.active_units("defender").all(func(u): return not u.acted and u.moves_left == u.movement), "player units refreshed")
+	# Overrun as attacker with armor.
+	var tank_div = gs.add_division("armor", "germany", "berlin")
+	var foe_div = gs.add_division("infantry", "ussr", "poland")
+	view.open_with("berlin", "germany", "ussr", [tank_div], [foe_div])
+	check_eq(view.player_side, "attacker", "player attacks")
+	view.start_battle()
+	var b2: TacticalBattle = view.battle
+	check(view.is_player_phase(), "attacker moves first")
+	var tank: TacticalUnit = null
+	for u in b2.active_units("attacker"):
+		if u.type == "armor" and b2.reachable(u.id).size() > 3:
+			tank = u
+			break
+	check(tank != null, "armor platoon present")
+	if tank != null:
+		var foe: TacticalUnit = b2.active_units("defender")[0]
+		# Put the enemy 3 tiles away along a reachable tile.
+		var target_tile := NO_POS
+		var reach := b2.reachable(tank.id)
+		for p in reach:
+			if reach[p] >= 2 and TacticalBattle.distance(p, tank.pos) >= 2:
+				var n := free_adjacent(b2, p, [tank.pos])
+				if n != NO_POS and TacticalBattle.distance(n, tank.pos) > 1:
+					target_tile = n
+					break
+		foe.pos = target_tile
+		view.select_unit(tank.id)
+		check(not view.action_buttons["Overrun"].disabled, "Overrun enabled for armor")
+		view.action_buttons["Overrun"].pressed.emit()
+		check(view.grid.target_tiles().has(target_tile), "overrun target highlighted")
+		var hp2 := foe.hp
+		var start := tank.pos
+		click(view, target_tile)
+		check(tank.pos != start and TacticalBattle.distance(tank.pos, target_tile) == 1, "overrun moved the armor next to the enemy")
+		check(foe.hp < hp2 or foe.destroyed, "and attacked it")
+		check(tank.acted, "one action")
+	view.close()
+	await process_frame
+	check(game.tactical_view == null, "view closes")
+	game.queue_free()
+	await process_frame
 
 
 func test_movement() -> void:

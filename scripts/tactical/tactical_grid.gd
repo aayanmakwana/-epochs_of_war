@@ -20,6 +20,13 @@ var attacker_color: Color = Color(0.8, 0.3, 0.3)
 var defender_color: Color = Color(0.3, 0.45, 0.85)
 var selected_unit: int = -1
 var hovered: Vector2i = NO_TILE
+## Battle state (step 16); null during deployment.
+var battle: TacticalBattle
+## Click mode of the selected unit: move | attack | overrun | barrage.
+var mode: String = "move"
+
+const TARGET := Color(1.0, 0.3, 0.25, 0.95)
+const SPLASH := Color(1.0, 0.6, 0.2, 0.45)
 
 
 func _ready() -> void:
@@ -171,9 +178,15 @@ func _draw_objective(t: Vector2i, n: int) -> void:
 	draw_string(font, c + Vector2(-tile_size * 0.4, fs * 0.36), str(n), HORIZONTAL_ALIGNMENT_CENTER, tile_size * 0.8, fs, OBJECTIVE)
 
 
+## Green tiles: deployment = where the selected unit may be placed; battle (move
+## mode) = tiles it can reach this phase.
 func valid_tiles() -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
 	if deployment == null or selected_unit < 0:
+		return out
+	if battle != null:
+		if mode == "move" and battle.active_side == _selected_side():
+			out.assign(battle.reachable(selected_unit).keys())
 		return out
 	for y in map.size:
 		for x in map.size:
@@ -183,9 +196,41 @@ func valid_tiles() -> Array[Vector2i]:
 	return out
 
 
+func _selected_side() -> String:
+	var u := deployment.unit(selected_unit) if deployment else null
+	return u.side if u else ""
+
+
+## Red tiles (battle): enemies the selected unit can attack (move/attack mode) or
+## overrun, or tiles it can barrage.
+func target_tiles() -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	if battle == null or selected_unit < 0 or battle.active_side != _selected_side():
+		return out
+	match mode:
+		"overrun":
+			for t in battle.overrun_targets(selected_unit):
+				out.append(t.pos)
+		"barrage":
+			out = battle.barrage_tiles(selected_unit)
+		_:
+			for t in battle.attack_targets(selected_unit):
+				out.append(t.pos)
+	return out
+
+
 func _draw_valid_tiles() -> void:
 	for t in valid_tiles():
 		draw_rect(tile_rect(t).grow(-3), VALID, false, 1.5)
+	var targets := target_tiles()
+	for t in targets:
+		if mode == "barrage":
+			draw_rect(tile_rect(t).grow(-4), Color(TARGET, 0.5), false, 1.0)
+		else:
+			draw_rect(tile_rect(t).grow(-2), TARGET, false, 3.0)
+	if mode == "barrage" and hovered != NO_TILE and targets.has(hovered):
+		for p in battle.barrage_area(hovered):
+			draw_rect(tile_rect(p), SPLASH if p != hovered else Color(TARGET, 0.45))
 
 
 func _draw_unit(u: TacticalUnit) -> void:
@@ -204,5 +249,15 @@ func _draw_unit(u: TacticalUnit) -> void:
 	# Facing tick.
 	var c := r.get_center()
 	draw_line(c + Vector2(u.facing) * r.size.x * 0.3, c + Vector2(u.facing) * r.size.x * 0.5, Color.WHITE, 2.0)
+	# Step 16 status markers: dug in (sandbag bar on top), overwatch (eye ring),
+	# spent units of the side in its phase are dimmed.
+	if u.dug_in:
+		draw_rect(Rect2(r.position + Vector2(0, -3), Vector2(r.size.x, 4)), Color(0.75, 0.62, 0.38))
+	if u.overwatch:
+		var oc := r.position + Vector2(r.size.x - tile_size * 0.12, tile_size * 0.12)
+		draw_circle(oc, tile_size * 0.1, Color(0.1, 0.1, 0.1, 0.9))
+		draw_arc(oc, tile_size * 0.1, 0, TAU, 12, Color(1, 0.9, 0.3), 1.5)
+	if battle != null and battle.active_side == u.side and u.acted and u.moves_left <= 0:
+		draw_rect(r, Color(0, 0, 0, 0.4))
 	if u.id == selected_unit:
 		draw_rect(tile_rect(u.pos).grow(-1), SELECT, false, 3.0)

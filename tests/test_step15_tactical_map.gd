@@ -248,9 +248,9 @@ func run_tests() -> void:
 	check_eq(view.unit_buttons.size(), defenders.size() * 3, "unit list shows the player's units")
 	var ul: Control = view.unit_list
 	check(ul.get_global_rect().position.x < 400, "unit list on the left")
-	check_eq(view.action_buttons.size(), 5, "5 action buttons")
+	check_eq(view.action_buttons.size(), 7, "7 action buttons (step 16)")
 	var mv_btn: Button = view.action_buttons["Move"]
-	check(mv_btn.disabled and mv_btn.get_global_rect().position.y > 1000, "action buttons at the bottom, disabled until step 16")
+	check(mv_btn.disabled and mv_btn.get_global_rect().position.y > 1000, "action buttons at the bottom, disabled during deployment")
 	var g: Control = view.grid
 	check(g.get_global_rect().position.x > 340 and g.get_global_rect().end.x < 1620, "grid between the side panels")
 	check(g.size.x >= 20 * 30, "grid is drawn at a usable size")
