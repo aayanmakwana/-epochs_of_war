@@ -5,11 +5,13 @@ extends Node
 @onready var map_view: MapView = $World/MapView
 @onready var camera: MapCamera = $World/MapCamera
 @onready var ui_layer: CanvasLayer = $UI
+@onready var hud: Hud = $UI/HUD
 
 
 func _ready() -> void:
 	camera.setup(GameData.geometry.bounds())
 	map_view.set_camera(camera)
+	hud.setup(map_view, camera)
 	var capital: String = GameData.nation(GameState.player_nation).get("capital", "")
 	if capital != "":
 		camera.focus_on(GameData.geometry.anchors[capital].lerp(GameData.geometry.bounds().get_center(), 0.5))

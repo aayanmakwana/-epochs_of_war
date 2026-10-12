@@ -194,18 +194,24 @@ func set_hovered(pid: String) -> void:
 	EventBus.province_hovered.emit(pid)
 
 
+## Viewport (screen) position of a mouse event -> world position. Uses the
+## event's own position rather than the OS cursor (works with injected events).
+func _event_world_pos(screen_pos: Vector2) -> Vector2:
+	return get_viewport().get_canvas_transform().affine_inverse() * screen_pos
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT and not mb.pressed:
 			if camera == null or not camera.was_drag():
-				click_at(get_global_mouse_position())
+				click_at(_event_world_pos(mb.position))
 		elif mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
-			var pid := province_at(get_global_mouse_position())
+			var pid := province_at(_event_world_pos(mb.position))
 			if pid != "":
 				EventBus.province_right_clicked.emit(pid)
 	elif event is InputEventMouseMotion:
-		set_hovered(province_at(get_global_mouse_position()))
+		set_hovered(province_at(_event_world_pos((event as InputEventMouseMotion).position)))
 
 
 func _on_province_changed(pid: String) -> void:

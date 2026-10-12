@@ -70,6 +70,15 @@ func was_drag() -> bool:
 	return drag_distance > DRAG_THRESHOLD
 
 
+## Runs before the GUI: a drag that started on the map but is released over a
+## HUD panel (which consumes the release) must still end the drag.
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and _drag_button != 0:
+		var mb := event as InputEventMouseButton
+		if not mb.pressed and mb.button_index == _drag_button:
+			_drag_button = 0
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
