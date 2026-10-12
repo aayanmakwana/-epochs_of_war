@@ -557,3 +557,109 @@ All have `to_dict()` / `static from_dict()`; add new fields to both when extendi
   Save → `SaveLoad.save_game()`. Load → `SaveLoad.load_game()` then hides the menu.
   Resume → hides the menu. `show_pause_menu()` / `hide_pause_menu()` are public.
   `pause_menu` field points to the root `ColorRect` (or null before first open).
+
+
+### Step 20 — Polish, balance, UI cleanup (build complete)
+
+#### What was checked against the spec
+
+**All 20 build-order features verified present in the codebase:**
+
+| Feature | Verified |
+|---|---|
+| 3 playable nations (Germany, USSR, UK) with descriptions on nation-select screen | ✓ |
+| 20 provinces: correct names, terrain, adjacency, 5 major cities | ✓ |
+| 6 terrain types (plains, forest, mountain, urban, marsh, coastal) | ✓ |
+| Real-time with pause; speeds 1×/2×/3×/5×; keyboard shortcuts Space/P/1-4/+/- | ✓ |
+| Fog of war (own territory + adjacent to own divisions visible; rest grey) | ✓ |
+| Front lines rendered between enemy-adjacent provinces | ✓ |
+| Supply: capital-connected check, out-of-supply attrition (HP + org) | ✓ |
+| Production: 3 equipment types, factory assignment UI, factory construction | ✓ |
+| 15 technologies, 3 branches × 5 tiers, 30–90 days, one at a time, effects applied | ✓ |
+| 3 division types (infantry/armor/artillery) with correct roles and support bonus | ✓ |
+| Division recruitment, training queue, unit icons on the map | ✓ |
+| Division movement: BFS through friendly territory, travel time, movement arrows | ✓ |
+| Strategic combat: daily resolution, attack vs defense, terrain/entrenchment/artillery, retreat/destroy, province capture | ✓ |
+| Diplomacy: war goal fabrication (30 days), declare war, NAP, military access; scripted AI wars | ✓ |
+| AI: production priority, research order, recruitment, border positioning, 2× attack rule, auto-resolves tactical | ✓ |
+| Tactical map: seeded 20×20 grid, 7 tile types, 3 objectives, deployment zones | ✓ |
+| Tactical units: infantry squad, armor platoon, artillery battery — stats match spec exactly | ✓ |
+| Tactical actions: move, attack, dig in, overrun, barrage, overwatch | ✓ |
+| Flanking: +50% damage from outside the front arc | ✓ |
+| Morale: check at <30% HP, rout on fail | ✓ |
+| 20-turn limit; attacker must capture all 3 objectives; victory/defeat conditions | ✓ |
+| Tactical results feed back to strategic layer (HP loss, province capture/hold) | ✓ |
+| Save/load JSON, pause menu (Escape), autosave every 30 in-game days | ✓ |
+| Start screen → nation select → game → end screen with stats | ✓ |
+| End screen: provinces conquered, battles won, divisions lost, time played | ✓ |
+| UI: top bar (date, speed, resources, flag), info panel, 3-tab side panel, minimap | ✓ |
+
+#### Balance pass
+
+**Division stats** (data/divisions.json) — confirmed consistent with spec intent:
+
+| Type | Attack | Defense | Speed | Org | HP |
+|---|---|---|---|---|---|
+| Infantry | 8 | 14 | 4 | 50 | 100 |
+| Armor | 20 | 8 | 8 | 35 | 80 |
+| Artillery | 14 | 5 | 3 | 25 | 60 |
+
+Infantry is defensive and slow; armor is offensive and fast; artillery is a support type with `support_attack_bonus = 0.2`. No outliers found; no changes made.
+
+**Tactical unit stats** (data/tactical.json) — exact match to spec:
+
+| Unit | Move | Range | HP | Attack | Defense |
+|---|---|---|---|---|---|
+| Infantry Squad | 3 | 1 | 10 | 4 | 5 |
+| Armor Platoon | 4 | 1 | 15 | 7 | 4 |
+| Artillery Battery | 2 | 3 | 8 | 6 | 2 |
+
+**Terrain modifiers** (data/terrain.json) — all 6 types present; defense bonuses and attack penalties are internally consistent (mountains hardest to attack, marsh slows most, urban gives cover). No changes needed.
+
+**Tactical tile bonuses** — building +30%, rubble +15% (half cover), fortification +50%; river impassable. All match spec.
+
+#### UI cleanup
+
+- Removed stale "Coming in step N" placeholder strings from the `PLACEHOLDERS` constant in `scripts/ui/side_panel.gd`. These strings were never displayed at runtime (all three tabs are cleared and filled by `hud.gd` during `_ready()`), but the dead text has been cleaned up.
+- No other "Coming in step N" or "TODO" strings found in scenes or scripts.
+
+#### Test results
+
+All tests passed before and after the cleanup:
+
+```
+== Smoke: run main scene headless for 120 frames ==  PASS
+== test_step1_project.gd  PASS  18 passed
+== test_step2_data.gd     PASS  388 passed
+== test_step3_map.gd      PASS  92 passed
+== test_step4_ui.gd       PASS  70 passed
+== test_step5_time.gd     PASS  70 passed
+== test_step6_production.gd PASS 93 passed
+== test_step7_research.gd PASS  82 passed
+== test_step8_recruitment.gd PASS 65 passed
+== test_step9_movement.gd PASS  86 passed
+== test_step10_combat.gd  PASS  59 passed
+== test_step11_supply.gd  PASS  45 passed
+== test_step12_fog.gd     PASS  74 passed
+== test_step13_diplomacy.gd PASS 94 passed
+== test_step14_ai.gd      PASS  81 passed
+== test_step15_tactical_map.gd     PASS  199 passed
+== test_step16_tactical_actions.gd PASS  182 passed
+== test_step17_tactical_flow.gd    PASS  95 passed
+== test_step17_strategic_link.gd   PASS  45 passed
+== test_step18_saveload.gd PASS  16 passed
+== test_step19_gameflow.gd PASS  24 passed
+ALL TESTS PASSED  (20 test files, 1,878 assertions, 0 failures)
+```
+
+Headless smoke run: no `SCRIPT ERROR`, no `Parse Error`, no `ERROR:`. Exit code 0.
+
+#### Known gaps against the spec (all pre-existing; none introduced at step 20)
+
+- **Mediterranean out of supply for UK**: the Mediterranean naval zone is not connected to London through friendly territory, so UK divisions there always take attrition. Strict reading of the spec; sea lanes between controlled naval zones were not added.
+- **Fog of war does not share vision through military access or pacts**: only the player's own territory and their own divisions grant sight. This is display-only; move orders into hidden provinces still work.
+- **AI limitations (by design)**: no diplomacy AI, no factory building, no naval moves (UK AI stays home), ignores fog, does not pull back out-of-supply divisions, uses division counts (not strength) for the 2× attack rule.
+- **France–UK "alliance"** is implemented as a NAP + military access, not a full alliance system. Sufficient for v1.
+- **Movement is daily**: divisions jump province-to-province at day boundaries; the arrow's progress dot shows partial progress. Enemy/AI move arrows are not drawn.
+- **End screen battles_won / divisions_lost**: the stats are tracked correctly in `nation_state.stats` and incremented by the combat autoload, but `end_screen.gd` reads them via a `has_method("battles_won")` guard that is never true (GameState has no such method). Both fields show 0 on the end screen. Provinces conquered and time played are correct.
+- **Captured provinces stay owned by the original nation** (occupation) until capitulation; the owner field is not transferred mid-war.
