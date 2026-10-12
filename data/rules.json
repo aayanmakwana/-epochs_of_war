@@ -11,6 +11,7 @@
 	"factory_build_days": 120,
 	"factory_build_cost_steel": 50,
 	"max_factories_per_province": 15,
+	"default_production_split": { "infantry_equipment": 0.5, "armor": 0.25, "artillery": 0.25 },
 	"autosave_interval_days": 30,
 	"attrition_per_day": 0.02,
 	"major_city_count": 5

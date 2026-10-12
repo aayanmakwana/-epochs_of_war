@@ -70,6 +70,11 @@ func new_game(player_id: String, seed_value: int = 1936) -> void:
 	for nid in GameData.nation_ids:
 		for sd: Dictionary in GameData.nations[nid].get("starting_divisions", []):
 			add_division(sd.template, nid, sd.province)
+	# Step 6: every nation starts with its factories split by rules.default_production_split.
+	var production := get_node_or_null("/root/Production")
+	if production:
+		for nid in GameData.nation_ids:
+			production.apply_default_allocation(nid)
 	active = true
 	EventBus.game_state_ready.emit()
 

@@ -23,6 +23,7 @@ GameData="*res://scripts/autoload/game_data.gd"
 GameState="*res://scripts/autoload/game_state.gd"
 Simulation="*res://scripts/autoload/simulation.gd"
 TimeManager="*res://scripts/autoload/time_manager.gd"
+Production="*res://scripts/autoload/production.gd"
 
 [display]
 
