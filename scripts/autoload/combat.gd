@@ -306,6 +306,9 @@ func run_recovery() -> void:
 			d.entrenchment = minf(1.0, d.entrenchment + ent_rate)
 		if is_in_battle(d):
 			continue
+		var supply := get_node_or_null("/root/Supply")
+		if supply and not supply.is_supplied(d):
+			continue   # step 11: out of supply -> attrition instead of recovery
 		var s := _stats(d)
 		d.organization = minf(float(s.organization), d.organization + _r("org_recovery_per_day", 0.1) * float(s.organization))
 		var ps: ProvinceState = GameState.province(d.province)

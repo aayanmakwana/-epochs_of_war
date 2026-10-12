@@ -54,6 +54,8 @@ signal division_destroyed(division_id: int)
 signal battle_started(province_id: String)
 signal battle_ended(province_id: String, attacker_won: bool)
 signal province_captured(province_id: String, new_controller: String, old_controller: String)
+## The set of provinces in supply for a nation changed (step 11).
+signal supply_changed(nation_id: String)
 
 # --- Diplomacy (step 13) --------------------------------------------------
 signal war_declared(attacker: String, defender: String)
