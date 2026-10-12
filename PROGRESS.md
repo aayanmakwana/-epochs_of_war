@@ -21,7 +21,8 @@ Run all tests: `powershell -ExecutionPolicy Bypass -File tests\run_all.ps1`
 | 10 Strategic combat | done | `tests/test_step10_combat.gd`: Combat autoload + daily systems after movement, hook set; combat math (attack, artillery support +20%, mountain attack -25% / defense up, entrenchment +25%, HP strength factor, damage formula + ratio clamp); entrenchment/org/HP recovery, no entrenchment while moving; attack on Poland: battle_started on arrival, attackers wait in origin, 0-HP division destroyed, save/load mid-battle, attacker win -> capture (controller changes, owner keeps claim), province_captured, defenders without retreat destroyed, stats; undefended province captured on arrival without battle; lone artillery vs entrenched mountain defender loses and stops; Soviet defender retreats to adjacent Soviet province; stopping the attacker ends the battle; UI: no fronts at peace, Berlin-Poland front at war, battle marker, info panel BattleInfo + Bar_Battle only on the battle province |
 | 11 Supply system | done | `tests/test_step11_supply.gd`: Supply autoload + daily system between combat and combat_recovery; all provinces in supply at start (UK Mediterranean excepted, see known issues); source = capital; isolated German-held Moscow cut off (`cut_off_provinces`), USSR without Moscow has no supply; military access reconnects Ukraine via Poland; losing Berlin cuts all German supply; attrition exact (-2% max HP, -5% max org per day), in-supply divisions recover while cut-off ones don't, player notify on loss/restore, supply survives save/load, `supply_changed` after reconnect, no attrition once supplied, destroyed at 0 HP, AI divisions take attrition, capitulated skipped; UI: overlay list, "In supply" yes/no in province (controller's supply) and division views |
 | 12 Fog of war | done | `tests/test_step12_fog.gd`: Fog autoload + `EventBus.fog_changed`; Germany at start: own provinces and neighbours visible (Poland, Czechoslovakia, Austria, France, North Sea, Belarus, Leningrad), distant ones hidden (Moscow, Ukraine, Urals, Siberia, London, Mediterranean, Romania, Hungary ...); rule check for every province vs an independent computation (germany/ussr/uk, after occupation, move, capture); occupied province without divisions is no sight source for the owner, the occupier gains sight; a division moved into Belarus (military access) reveals Moscow/Ukraine + `fog_changed`, destroying it hides Moscow again; capturing Poland reveals Ukraine (not Romania), losing it hides it; no signal when nothing changes; save/load; USSR player; `set_enabled(false)` shows everything; UI: `fogged_provinces()`, grey fill (`province_display_color`), no unit icons/battle markers in hidden provinces, enemy icons in visible ones kept, info panel "Unknown" garrison + no division buttons in hidden provinces, hidden foreign division -> province view, map recolours after reveal by capture |
-| 13-20 | pending | |
+| 13 Diplomacy | done | `tests/test_step13_diplomacy.gd`: Diplomacy autoload + daily system; `war_goal_days` = 30; nobody at war at start, France "Neutral"; declare refused without war goal (changes nothing); justify on self refused, no double justification, days left, declare blocked while justifying, not ready one day early, ready on day 30, war goal survives save/load; declare -> symmetric `at_war_with`, `war_declared`, goal consumed, no second declaration, Movement sees hostile, no pact/access while at war; cancel justification; pact: accepted at peace, `pact_signed`, both ways, cancels war goal, blocks justification both ways and declaration, no duplicate, break pact re-enables war, save/load; access: grants passability, `military_access_granted(host, guest)`, one way, no duplicate, division moves in via access, war with the host revokes access and sends the division to its capital, revoke; capitulated targets refused; scripted wars: AI Germany at war with Poland on 1 Sep 1939 (not on 31 Aug), France on 10 May 1940 (symmetric), player Germany never forced; UI: placeholder removed, `hud.diplomacy_panel` in tab, one row per other nation (none for the player), status text, declare disabled with reason, Justify -> justifying status + Cancel, Declare enabled when ready and declares war, pact/access disabled at war, pact and access buttons work and status updates |
+| 14-20 | pending | |
 
 ## Architecture
 
@@ -299,6 +300,33 @@ tests/                   test_base.gd harness, test_stepN_*.gd, run_all.ps1, log
   `_on_fog_changed` recolours fills and redraws Borders/Fronts/Units/Fog. Minimap uses `province_display_color` and redraws
   on `fog_changed`.
 
+### Diplomacy (step 13)
+- **Diplomacy** autoload (`scripts/autoload/diplomacy.gd`, last, after Fog) registers
+  `Simulation.register_daily("diplomacy", run_daily, 5)` (runs right before `day_passed`, like every system).
+  State lives in `NationState` (`at_war_with`, `non_aggression`, `military_access` = hosts this nation may enter,
+  `war_goals` target -> days left, 0 = ready); all saved, no extra save data.
+- War goals: `start_justification(nid, target)` sets `war_goals[target] = rules.war_goal_days` (30); daily -1; at 0
+  `nation_changed` + player notify. `cancel_justification`. Refused: self, capitulated, at war, pact, already justifying/ready.
+- War: `declare_war(nid, target)` needs a ready war goal and no pact (either direction). `_start_war(a, b)` (no checks,
+  used by scripted wars): symmetric `at_war_with`, removes war goals/pacts/access between the two, divisions standing in
+  the other side's territory are teleported to their capital (`Recruitment.default_deploy_province`, emits
+  `division_moved`), emits `war_declared(a, b)` + `nation_changed` x2, `Supply/Fog.queue_check()`, player notify.
+- Pacts: `offer_pact` accepted whenever not at war (stored on both nations, cancels war goals both ways, `pact_signed`);
+  `cancel_pact` breaks it. Access: `request_access(guest, host)` accepted whenever not at war (appends host to guest's
+  `military_access`, `military_access_granted(host, guest)`); `revoke_access(host, guest)`. Requests aimed at the player are
+  also auto-accepted (no diplomacy AI in v1).
+- Queries: `is_at_war`, `has_pact`, `has_access(guest, host)`, `is_justifying`, `has_war_goal`, `war_goal_days_left`
+  (-1 none), `enemies`, `status_text(nid, other)`, and `*_error` / `can_*` for justification, declare_war, pact, access.
+- Scripted wars: `rules.scripted_wars` = `[{date: [y, m, d], attacker, defender}]` (Germany -> Poland 1939-09-01,
+  Germany -> France 1940-05-10). Fire on the first daily tick with `day_index >=` date if the attacker is not the player,
+  neither side capitulated and not already at war. **Step 14 AI** can rely on these wars and use the same API.
+- **Not done (step 19):** capitulation when a capital is captured (`nation_capitulated`, provinces surrendered).
+  France has no special UK alliance beyond normal pact/access acceptance.
+- UI: `DiplomacyPanel` (`scripts/ui/diplomacy_panel.gd`, `hud.diplomacy_panel`) in the Diplomacy tab: `summary` ("At war
+  with: ..."), `rows[nid]` = {row, flag, name, status, justify, declare, pact, access} for every nation except the player
+  (rebuilt when the player nation changes). Buttons: Justify/Cancel, Declare war, Offer pact/Break pact, Request access;
+  disabled ones carry the reason in `tooltip_text`. Refreshes at most once per frame on day/nation/diplomacy signals.
+
 ### Autoloads (order matters: later ones may use earlier ones)
 1. **EventBus** (`scripts/autoload/event_bus.gd`): signals only. All signals for later steps are already declared:
    `game_state_ready`, `game_over(result)`, `hour_passed(hour)`, `day_passed(day_index)`, `month_passed(year, month)`,
@@ -374,7 +402,9 @@ All have `to_dict()` / `static from_dict()`; add new fields to both when extendi
   progress dot shows partial progress. Enemy/AI move orders are not drawn.
 - Headless test windows are smaller than the 1920x1080 viewport, so tests call `MapView._unhandled_input(ev)` directly
   for clicks near the screen edge instead of `root.push_input`.
-- The Diplomacy tab is a placeholder until step 13 (Production filled in step 6, Research in step 7). AI nations do not pick research until step 14. Speed buttons and the clock work since step 5.
+- Diplomacy (step 13): AI acceptance is trivial (pacts/access accepted whenever not at war); capital capture does not
+  end wars yet (step 19); France-UK "alliance" is only pact + access. `test_step4_ui.gd` no longer expects a Diplomacy placeholder.
+- All three side tabs are filled since step 13. AI nations do not pick research until step 14. Speed buttons and the clock work since step 5.
 - Production balance numbers (equipment costs, default split) are first-pass; step 20 balance pass may tune them.
 - Minor nations run the same economy with their default split (no AI changes until step 14).
 - Tests that simulate clicks should use `root.push_input` with the event `position` set. Headless doesn't move the OS cursor,
