@@ -20,7 +20,8 @@ Run all tests: `powershell -ExecutionPolicy Bypass -File tests\run_all.ps1`
 | 9 Division movement | done | `tests/test_step9_movement.gd`: Movement autoload + daily system after recruitment; BFS paths (adjacent, 2-hop, none into neutral/foreign/UK sea/own province, UK may enter its sea), refusal reasons (naval, not friendly, already there), refused order changes nothing; military access opens land provinces (multi-hop through access), adjacent at-war enemy province is a valid final target but not passable; travel days (infantry 4 speed, forest 6 d, urban infra 5 4 d, armor faster, artillery slower); order -> path + `division_order_changed`, ETA, 75% after 3 of 4 days, arrival on the exact day with origin + `division_moved(id, from, to)`, progress reset; save/load mid-move keeps path + progress, nothing one day early; stop; target lost -> halt + player notify; intermediate lost -> reroute to same destination; capitulated frozen; UI: garrison button selects division for orders + move hint, click on foreign province refused with notify (selection kept), click on valid province orders without changing province selection, Stop button / ETA / orders text, movement arrow points/selected/progress, right-click orders, Escape clears unit selection, unit icon click selects all player divisions there (info panel group size) + group order, province selection clears unit selection, foreign divisions not selectable for orders |
 | 10 Strategic combat | done | `tests/test_step10_combat.gd`: Combat autoload + daily systems after movement, hook set; combat math (attack, artillery support +20%, mountain attack -25% / defense up, entrenchment +25%, HP strength factor, damage formula + ratio clamp); entrenchment/org/HP recovery, no entrenchment while moving; attack on Poland: battle_started on arrival, attackers wait in origin, 0-HP division destroyed, save/load mid-battle, attacker win -> capture (controller changes, owner keeps claim), province_captured, defenders without retreat destroyed, stats; undefended province captured on arrival without battle; lone artillery vs entrenched mountain defender loses and stops; Soviet defender retreats to adjacent Soviet province; stopping the attacker ends the battle; UI: no fronts at peace, Berlin-Poland front at war, battle marker, info panel BattleInfo + Bar_Battle only on the battle province |
 | 11 Supply system | done | `tests/test_step11_supply.gd`: Supply autoload + daily system between combat and combat_recovery; all provinces in supply at start (UK Mediterranean excepted, see known issues); source = capital; isolated German-held Moscow cut off (`cut_off_provinces`), USSR without Moscow has no supply; military access reconnects Ukraine via Poland; losing Berlin cuts all German supply; attrition exact (-2% max HP, -5% max org per day), in-supply divisions recover while cut-off ones don't, player notify on loss/restore, supply survives save/load, `supply_changed` after reconnect, no attrition once supplied, destroyed at 0 HP, AI divisions take attrition, capitulated skipped; UI: overlay list, "In supply" yes/no in province (controller's supply) and division views |
-| 12-20 | pending | |
+| 12 Fog of war | done | `tests/test_step12_fog.gd`: Fog autoload + `EventBus.fog_changed`; Germany at start: own provinces and neighbours visible (Poland, Czechoslovakia, Austria, France, North Sea, Belarus, Leningrad), distant ones hidden (Moscow, Ukraine, Urals, Siberia, London, Mediterranean, Romania, Hungary ...); rule check for every province vs an independent computation (germany/ussr/uk, after occupation, move, capture); occupied province without divisions is no sight source for the owner, the occupier gains sight; a division moved into Belarus (military access) reveals Moscow/Ukraine + `fog_changed`, destroying it hides Moscow again; capturing Poland reveals Ukraine (not Romania), losing it hides it; no signal when nothing changes; save/load; USSR player; `set_enabled(false)` shows everything; UI: `fogged_provinces()`, grey fill (`province_display_color`), no unit icons/battle markers in hidden provinces, enemy icons in visible ones kept, info panel "Unknown" garrison + no division buttons in hidden provinces, hidden foreign division -> province view, map recolours after reveal by capture |
+| 13-20 | pending | |
 
 ## Architecture
 
@@ -277,6 +278,27 @@ tests/                   test_base.gd harness, test_stepN_*.gd, run_all.ps1, log
   InfoPanel: `SupplyGrid` row "In supply" yes/no in the province view (supply of the province's controller, land and sea)
   and an "In supply" row in the division StatsGrid ("no (-N HP/day)"). **Step 12**: hide the overlay/rows for fogged provinces if needed.
 
+### Fog of war (step 12)
+- **Fog** autoload (`scripts/autoload/fog.gd`, after Supply). A nation sees the provinces it **controls**, the provinces
+  holding **its divisions**, and every province **adjacent** to either. Derived on demand (no cache, no save data);
+  divisions reveal their surroundings as soon as `division_moved` puts them in a new province.
+- API: `sight_sources(nid)`, `visible_set(nid)` (pid -> true), `visible_provinces(nid)`, `hidden_provinces(nid)`,
+  `is_visible_to(nid, pid)` (any nation, ignores `enabled`); player helpers `is_visible(pid)`, `player_visible_set()`,
+  `player_hidden_provinces()` (respect `enabled`). `enabled` (rule `fog_of_war`, default true; not in rules.json yet),
+  `set_enabled(b)` (emits `fog_changed`). **AI (step 14)** may ignore fog or use `is_visible_to`.
+- New signal `EventBus.fog_changed` (no args): emitted (deferred) when the player's visible set changes after
+  division_created/moved/destroyed, province_changed, nation_capitulated; always on `game_state_ready`.
+  **Step 13**: if military access / alliances should share vision, extend `sight_sources` and call `Fog.queue_check()`.
+- What is hidden: unit counters (`MapView.unit_icons()` skips hidden provinces, so they cannot be clicked either), battle
+  markers + battle outlines (`battle_markers()`), front lines where *both* provinces are hidden (`front_borders()`), the
+  garrison (shows a `FogUnknown` label "Unknown" inside `Garrison`) and Battle section of the province info panel. A foreign
+  division in a hidden province opened via `division_selected` falls back to the province view.
+  Still visible under fog: owner/controller name, terrain, resources, buildings, supply row (political map is known).
+- Map: `MapView.province_display_color(pid)` = political colour, or grey (`FOG_LAND` / `FOG_SEA`) when hidden; fills use it,
+  labels of hidden provinces get alpha 0.6, the Fog layer draws a faint dark hatch. `fogged_provinces()`, `is_province_visible(pid)`.
+  `_on_fog_changed` recolours fills and redraws Borders/Fronts/Units/Fog. Minimap uses `province_display_color` and redraws
+  on `fog_changed`.
+
 ### Autoloads (order matters: later ones may use earlier ones)
 1. **EventBus** (`scripts/autoload/event_bus.gd`): signals only. All signals for later steps are already declared:
    `game_state_ready`, `game_over(result)`, `hour_passed(hour)`, `day_passed(day_index)`, `month_passed(year, month)`,
@@ -343,7 +365,9 @@ All have `to_dict()` / `static from_dict()`; add new fields to both when extendi
   (UK divisions moved there take attrition; a UK player sees it hatched). Strict reading of the spec; step 20 may add sea
   lanes between controlled naval zones. Out-of-supply divisions have no combat penalty beyond attrition.
 - Git prints "CRLF will be replaced by LF" warnings on commit (.gitattributes normalises line endings); harmless.
-- The Fog map layer is intentionally empty until step 12 (Units drawn since step 8, Fronts since step 10).
+- Fog of war (step 12) does not share vision through military access or pacts; only the player's own territory and divisions
+  give sight. Enemy move arrows were never drawn, so nothing leaks there. Fog is display-only: move orders into hidden
+  provinces still work (the BFS only crosses friendly territory anyway).
 - Combat balance (rules.json combat_* keys) is first-pass; lone divisions attacking entrenched defenders usually lose. Step 20 may tune.
 - Captured provinces stay owned by the original nation (occupation) until capitulation is implemented.
 - Movement is daily (as specified for step 9), so divisions jump province to province at day boundaries; the arrow's

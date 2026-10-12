@@ -89,6 +89,7 @@ The build follows the 20-step Build Order in the design document.
 | 9 | Division movement (select a division, click/right-click a destination, paths through friendly territory, travel time by speed and terrain, movement arrows) | done |
 | 10 | Strategic combat (battles on entering defended enemy provinces, daily damage from attack vs defense with terrain/entrenchment/artillery, retreat or destruction, province capture, front lines and battle markers) | done |
 | 11 | Supply system (provinces connected to the capital through friendly territory are in supply; out-of-supply divisions take daily HP/organization attrition; hatched map overlay and "In supply" info rows) | done |
-| 12-20 | Fog of war ... polish | pending |
+| 12 | Fog of war (only provinces you control, provinces with your divisions and their neighbours are visible; hidden provinces are drawn grey on the map and minimap, enemy units and battles there are not shown, garrison reads "Unknown"; moving or capturing reveals more) | done |
+| 13-20 | Diplomacy ... polish | pending |
 
 See [`PROGRESS.md`](PROGRESS.md) for details and architecture notes.
