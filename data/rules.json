@@ -1,0 +1,17 @@
+{
+	"_comment": "Global tuning constants. Read through GameData.rule(key, default).",
+	"start_year": 1936,
+	"start_month": 1,
+	"start_day": 1,
+	"end_year": 1945,
+	"speeds": [1, 2, 3, 5],
+	"seconds_per_day_at_1x": 1.0,
+	"max_hours_per_frame": 48,
+	"production_per_factory": 1.0,
+	"factory_build_days": 120,
+	"factory_build_cost_steel": 50,
+	"max_factories_per_province": 15,
+	"autosave_interval_days": 30,
+	"attrition_per_day": 0.02,
+	"major_city_count": 5
+}

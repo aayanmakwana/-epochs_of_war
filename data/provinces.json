@@ -1,0 +1,25 @@
+{
+	"_comment": "Static province definitions. Order = the design doc's province list. 'owner' is the 1 January 1936 owner. 'factories' are the starting factories in the province (a nation's factory count is the sum over the provinces it controls). 'resources' are produced per day. 'major_city' provinces trigger tactical battles.",
+	"provinces": [
+		{ "id": "berlin",          "name": "Berlin",          "terrain": "urban",    "owner": "germany",        "major_city": true,  "infrastructure": 5, "factories": 6,  "resources": { "steel": 2, "oil": 0, "food": 0 } },
+		{ "id": "east_prussia",    "name": "East Prussia",    "terrain": "forest",   "owner": "germany",        "major_city": false, "infrastructure": 3, "factories": 1,  "resources": { "steel": 0, "oil": 0, "food": 1 } },
+		{ "id": "poland",          "name": "Poland",          "terrain": "plains",   "owner": "poland",         "major_city": false, "infrastructure": 3, "factories": 3,  "resources": { "steel": 2, "oil": 0, "food": 2 } },
+		{ "id": "romania",         "name": "Romania",         "terrain": "plains",   "owner": "romania",        "major_city": false, "infrastructure": 2, "factories": 1,  "resources": { "steel": 0, "oil": 6, "food": 1 } },
+		{ "id": "hungary",         "name": "Hungary",         "terrain": "plains",   "owner": "hungary",        "major_city": false, "infrastructure": 3, "factories": 2,  "resources": { "steel": 1, "oil": 0, "food": 2 } },
+		{ "id": "czechoslovakia",  "name": "Czechoslovakia",  "terrain": "mountain", "owner": "czechoslovakia", "major_city": false, "infrastructure": 4, "factories": 4,  "resources": { "steel": 3, "oil": 0, "food": 0 } },
+		{ "id": "austria",         "name": "Austria",         "terrain": "mountain", "owner": "austria",        "major_city": false, "infrastructure": 4, "factories": 2,  "resources": { "steel": 2, "oil": 0, "food": 0 } },
+		{ "id": "western_germany", "name": "Western Germany", "terrain": "urban",    "owner": "germany",        "major_city": false, "infrastructure": 5, "factories": 10, "resources": { "steel": 6, "oil": 0, "food": 1 } },
+		{ "id": "france",          "name": "France",          "terrain": "plains",   "owner": "france",         "major_city": false, "infrastructure": 4, "factories": 8,  "resources": { "steel": 4, "oil": 0, "food": 3 } },
+		{ "id": "moscow",          "name": "Moscow",          "terrain": "urban",    "owner": "ussr",           "major_city": true,  "infrastructure": 4, "factories": 4,  "resources": { "steel": 2, "oil": 0, "food": 0 } },
+		{ "id": "leningrad",       "name": "Leningrad",       "terrain": "urban",    "owner": "ussr",           "major_city": true,  "infrastructure": 4, "factories": 3,  "resources": { "steel": 1, "oil": 0, "food": 0 } },
+		{ "id": "stalingrad",      "name": "Stalingrad",      "terrain": "urban",    "owner": "ussr",           "major_city": true,  "infrastructure": 3, "factories": 2,  "resources": { "steel": 2, "oil": 0, "food": 1 } },
+		{ "id": "ukraine",         "name": "Ukraine",         "terrain": "plains",   "owner": "ussr",           "major_city": false, "infrastructure": 3, "factories": 2,  "resources": { "steel": 4, "oil": 0, "food": 6 } },
+		{ "id": "belarus",         "name": "Belarus",         "terrain": "marsh",    "owner": "ussr",           "major_city": false, "infrastructure": 2, "factories": 1,  "resources": { "steel": 0, "oil": 0, "food": 2 } },
+		{ "id": "caucasus",        "name": "Caucasus",        "terrain": "mountain", "owner": "ussr",           "major_city": false, "infrastructure": 2, "factories": 1,  "resources": { "steel": 1, "oil": 8, "food": 1 } },
+		{ "id": "urals",           "name": "Urals",           "terrain": "mountain", "owner": "ussr",           "major_city": false, "infrastructure": 2, "factories": 3,  "resources": { "steel": 5, "oil": 0, "food": 0 } },
+		{ "id": "siberia",         "name": "Siberia",         "terrain": "forest",   "owner": "ussr",           "major_city": false, "infrastructure": 1, "factories": 0,  "resources": { "steel": 2, "oil": 1, "food": 1 } },
+		{ "id": "london",          "name": "London",          "terrain": "urban",    "owner": "uk",             "major_city": true,  "infrastructure": 5, "factories": 9,  "resources": { "steel": 3, "oil": 0, "food": 1 } },
+		{ "id": "north_sea",       "name": "North Sea",       "terrain": "coastal",  "owner": "uk",             "major_city": false, "infrastructure": 0, "factories": 0,  "resources": { "steel": 0, "oil": 0, "food": 0 } },
+		{ "id": "mediterranean",   "name": "Mediterranean",   "terrain": "coastal",  "owner": "uk",             "major_city": false, "infrastructure": 0, "factories": 0,  "resources": { "steel": 0, "oil": 0, "food": 0 } }
+	]
+}

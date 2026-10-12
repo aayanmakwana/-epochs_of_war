@@ -1,0 +1,125 @@
+{
+	"_comment": "Static nation definitions. 'playable' nations can be picked by the player. Manpower is raw men. Stockpile keys: infantry_equipment, armor, artillery, oil, steel. 'colonial_income' is added to daily resource income (UK colonies). Flag layouts: horizontal | vertical | solid | cross | triangle (drawn procedurally by scripts/ui/flag.gd). 'starting_divisions' are spawned by the military system (step 8).",
+	"nations": [
+		{
+			"id": "germany", "name": "Germany", "adjective": "German", "playable": true, "major": true,
+			"color": "#6e6e6e", "capital": "berlin",
+			"flag": { "layout": "horizontal", "colors": ["#1a1a1a", "#f2f2f2", "#d01c1c"] },
+			"manpower": 900000, "manpower_daily": 800,
+			"stockpile": { "infantry_equipment": 1500, "armor": 120, "artillery": 200, "oil": 200, "steel": 300 },
+			"colonial_income": { "steel": 0, "oil": 0 },
+			"starting_techs": ["basic_infantry", "light_tanks"],
+			"starting_divisions": [
+				{ "template": "infantry", "province": "berlin" },
+				{ "template": "infantry", "province": "western_germany" },
+				{ "template": "infantry", "province": "east_prussia" },
+				{ "template": "armor", "province": "berlin" },
+				{ "template": "artillery", "province": "western_germany" }
+			],
+			"description": "The strongest starting army and a large industrial base in the heart of Europe, but surrounded by enemies and short on oil."
+		},
+		{
+			"id": "ussr", "name": "Soviet Union", "adjective": "Soviet", "playable": true, "major": true,
+			"color": "#a3312c", "capital": "moscow",
+			"flag": { "layout": "solid", "colors": ["#c8102e"], "emblem": "star", "emblem_color": "#ffd700" },
+			"manpower": 2500000, "manpower_daily": 1600,
+			"stockpile": { "infantry_equipment": 1800, "armor": 80, "artillery": 150, "oil": 300, "steel": 250 },
+			"colonial_income": { "steel": 0, "oil": 0 },
+			"starting_techs": ["basic_infantry", "light_tanks"],
+			"starting_divisions": [
+				{ "template": "infantry", "province": "moscow" },
+				{ "template": "infantry", "province": "leningrad" },
+				{ "template": "infantry", "province": "belarus" },
+				{ "template": "infantry", "province": "ukraine" },
+				{ "template": "infantry", "province": "stalingrad" },
+				{ "template": "armor", "province": "moscow" }
+			],
+			"description": "Vast territory and the largest manpower pool in the world, but a weak starting industry. Trade space for time."
+		},
+		{
+			"id": "uk", "name": "United Kingdom", "adjective": "British", "playable": true, "major": true,
+			"color": "#c46a72", "capital": "london",
+			"flag": { "layout": "cross", "colors": ["#012169", "#ffffff", "#c8102e"] },
+			"manpower": 500000, "manpower_daily": 400,
+			"stockpile": { "infantry_equipment": 1000, "armor": 40, "artillery": 120, "oil": 400, "steel": 300 },
+			"colonial_income": { "steel": 3, "oil": 4 },
+			"starting_techs": ["basic_infantry"],
+			"starting_divisions": [
+				{ "template": "infantry", "province": "london" },
+				{ "template": "infantry", "province": "london" },
+				{ "template": "artillery", "province": "london" }
+			],
+			"description": "Ruler of the seas. Safe behind the North Sea, with colonial oil and steel, but a small army."
+		},
+		{
+			"id": "france", "name": "France", "adjective": "French", "playable": false, "major": false,
+			"color": "#4a6fb5", "capital": "france",
+			"flag": { "layout": "vertical", "colors": ["#0055a4", "#ffffff", "#ef4135"] },
+			"manpower": 700000, "manpower_daily": 500,
+			"stockpile": { "infantry_equipment": 1200, "armor": 60, "artillery": 200, "oil": 150, "steel": 200 },
+			"colonial_income": { "steel": 1, "oil": 1 },
+			"starting_techs": ["basic_infantry"],
+			"starting_divisions": [
+				{ "template": "infantry", "province": "france" },
+				{ "template": "infantry", "province": "france" },
+				{ "template": "artillery", "province": "france" }
+			],
+			"description": "Neutral at the start. Germany can declare war on it, or it can ally with the United Kingdom."
+		},
+		{
+			"id": "poland", "name": "Poland", "adjective": "Polish", "playable": false, "major": false,
+			"color": "#c79bd1", "capital": "poland",
+			"flag": { "layout": "horizontal", "colors": ["#ffffff", "#dc143c"] },
+			"manpower": 350000, "manpower_daily": 250,
+			"stockpile": { "infantry_equipment": 600, "armor": 10, "artillery": 60, "oil": 50, "steel": 80 },
+			"colonial_income": { "steel": 0, "oil": 0 },
+			"starting_techs": [],
+			"starting_divisions": [ { "template": "infantry", "province": "poland" }, { "template": "infantry", "province": "poland" } ],
+			"description": "Caught between Germany and the Soviet Union."
+		},
+		{
+			"id": "austria", "name": "Austria", "adjective": "Austrian", "playable": false, "major": false,
+			"color": "#e0d6a8", "capital": "austria",
+			"flag": { "layout": "horizontal", "colors": ["#ed2939", "#ffffff", "#ed2939"] },
+			"manpower": 120000, "manpower_daily": 80,
+			"stockpile": { "infantry_equipment": 250, "armor": 0, "artillery": 20, "oil": 20, "steel": 40 },
+			"colonial_income": { "steel": 0, "oil": 0 },
+			"starting_techs": [],
+			"starting_divisions": [ { "template": "infantry", "province": "austria" } ],
+			"description": "A small alpine republic."
+		},
+		{
+			"id": "czechoslovakia", "name": "Czechoslovakia", "adjective": "Czechoslovak", "playable": false, "major": false,
+			"color": "#5fa3a3", "capital": "czechoslovakia",
+			"flag": { "layout": "triangle", "colors": ["#ffffff", "#d7141a", "#11457e"] },
+			"manpower": 200000, "manpower_daily": 120,
+			"stockpile": { "infantry_equipment": 400, "armor": 20, "artillery": 50, "oil": 20, "steel": 80 },
+			"colonial_income": { "steel": 0, "oil": 0 },
+			"starting_techs": ["basic_infantry"],
+			"starting_divisions": [ { "template": "infantry", "province": "czechoslovakia" } ],
+			"description": "Mountain fortifications and the Skoda works."
+		},
+		{
+			"id": "hungary", "name": "Hungary", "adjective": "Hungarian", "playable": false, "major": false,
+			"color": "#c9a46b", "capital": "hungary",
+			"flag": { "layout": "horizontal", "colors": ["#cd2a3e", "#ffffff", "#436f4d"] },
+			"manpower": 150000, "manpower_daily": 100,
+			"stockpile": { "infantry_equipment": 300, "armor": 5, "artillery": 30, "oil": 20, "steel": 40 },
+			"colonial_income": { "steel": 0, "oil": 0 },
+			"starting_techs": [],
+			"starting_divisions": [ { "template": "infantry", "province": "hungary" } ],
+			"description": "A kingdom without a king on the Danube plain."
+		},
+		{
+			"id": "romania", "name": "Romania", "adjective": "Romanian", "playable": false, "major": false,
+			"color": "#e3c74b", "capital": "romania",
+			"flag": { "layout": "vertical", "colors": ["#002b7f", "#fcd116", "#ce1126"] },
+			"manpower": 200000, "manpower_daily": 120,
+			"stockpile": { "infantry_equipment": 300, "armor": 5, "artillery": 30, "oil": 150, "steel": 30 },
+			"colonial_income": { "steel": 0, "oil": 0 },
+			"starting_techs": [],
+			"starting_divisions": [ { "template": "infantry", "province": "romania" } ],
+			"description": "Its Ploiesti oil fields are coveted by everyone."
+		}
+	]
+}

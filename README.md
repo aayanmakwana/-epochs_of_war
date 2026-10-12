@@ -64,7 +64,7 @@ The build follows the 20-step Build Order in the design document.
 | Step | Feature | Status |
 |---|---|---|
 | 1 | Project setup | done |
-| 2 | Data layer | pending |
+| 2 | Data layer | done |
 | 3 | Strategic map rendering | pending |
 | 4 | UI shell | pending |
 | 5 | Time system | pending |

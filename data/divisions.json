@@ -1,0 +1,29 @@
+{
+	"_comment": "Division templates. speed = km per hour-ish movement rating used by the movement system (step 9). 'equipment' is consumed when recruiting. 'required_tech' must be researched before the template can be recruited. 'support_attack_bonus' boosts other divisions attacking from the same battle. 'tactical_units' lists the 3 tactical unit types this division splits into in city battles (steps 15-17).",
+	"divisions": [
+		{
+			"id": "infantry", "name": "Infantry Division", "short": "INF",
+			"attack": 8, "defense": 14, "speed": 4, "organization": 50, "hp": 100,
+			"manpower": 10000, "equipment": { "infantry_equipment": 100 },
+			"recruit_days": 30, "required_tech": "", "support_attack_bonus": 0.0,
+			"tactical_units": ["infantry", "infantry", "infantry"],
+			"description": "Cheap, slow and good at holding ground."
+		},
+		{
+			"id": "armor", "name": "Armored Division", "short": "ARM",
+			"attack": 20, "defense": 8, "speed": 8, "organization": 35, "hp": 80,
+			"manpower": 8000, "equipment": { "armor": 50, "infantry_equipment": 20 },
+			"recruit_days": 45, "required_tech": "light_tanks", "support_attack_bonus": 0.0,
+			"tactical_units": ["armor", "armor", "infantry"],
+			"description": "Expensive, fast and built to break through."
+		},
+		{
+			"id": "artillery", "name": "Artillery Division", "short": "ART",
+			"attack": 14, "defense": 5, "speed": 3, "organization": 25, "hp": 60,
+			"manpower": 6000, "equipment": { "artillery": 36, "infantry_equipment": 10 },
+			"recruit_days": 35, "required_tech": "", "support_attack_bonus": 0.2,
+			"tactical_units": ["artillery", "artillery", "infantry"],
+			"description": "Support. Boosts the attack of divisions fighting alongside it."
+		}
+	]
+}

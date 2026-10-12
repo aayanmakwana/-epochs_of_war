@@ -1,0 +1,8 @@
+{
+	"_comment": "Equipment types. 'cost' = production points per unit (one factory makes rules.production_per_factory points per day). 'resources' are consumed per unit produced.",
+	"equipment": [
+		{ "id": "infantry_equipment", "name": "Infantry Equipment", "short": "Inf Eq", "cost": 0.5, "resources": { "steel": 0.25, "oil": 0.0 } },
+		{ "id": "armor",              "name": "Armor",              "short": "Armor",  "cost": 8.0, "resources": { "steel": 2.0,  "oil": 1.0 } },
+		{ "id": "artillery",          "name": "Artillery",          "short": "Arty",   "cost": 3.0, "resources": { "steel": 1.0,  "oil": 0.0 } }
+	]
+}

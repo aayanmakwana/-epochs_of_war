@@ -1,0 +1,9 @@
+{
+	"_comment": "move_cost multiplies movement time. defense_bonus is added to the defender's defense multiplier, attack_modifier to the attacker's attack multiplier. naval terrain cannot be entered by land units unless the zone is owned by the mover (or an ally/access partner, decided in steps 9 and 13).",
+	"plains":   { "name": "Plains",   "color": "#b5c27a", "move_cost": 1.0,  "defense_bonus": 0.0,  "attack_modifier": 0.0,   "naval": false },
+	"forest":   { "name": "Forest",   "color": "#4f7a3a", "move_cost": 1.5,  "defense_bonus": 0.15, "attack_modifier": -0.1,  "naval": false },
+	"mountain": { "name": "Mountain", "color": "#8c7b67", "move_cost": 2.0,  "defense_bonus": 0.3,  "attack_modifier": -0.25, "naval": false },
+	"urban":    { "name": "Urban",    "color": "#9a9a9a", "move_cost": 1.25, "defense_bonus": 0.25, "attack_modifier": -0.15, "naval": false },
+	"marsh":    { "name": "Marsh",    "color": "#6f8a6a", "move_cost": 2.0,  "defense_bonus": 0.1,  "attack_modifier": -0.3,  "naval": false },
+	"coastal":  { "name": "Coastal / Naval zone", "color": "#3d6a94", "move_cost": 1.0, "defense_bonus": 0.0, "attack_modifier": 0.0, "naval": true }
+}

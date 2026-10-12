@@ -1,0 +1,23 @@
+{
+	"_comment": "Tactical city battle data (steps 15-17). Values from the design doc. defense_bonus is a multiplier added to defense (0.3 = +30%). move_cost 0 means impassable.",
+	"grid_size": 20,
+	"turn_limit": 20,
+	"objectives": 3,
+	"flank_damage_bonus": 0.5,
+	"morale_hp_threshold": 0.3,
+	"tiles": {
+		"street":        { "name": "Street",        "color": "#8a8578", "move_cost": 1, "defense_bonus": 0.0,  "passable": true },
+		"building":      { "name": "Building",      "color": "#5d5a55", "move_cost": 1, "defense_bonus": 0.3,  "passable": true },
+		"rubble":        { "name": "Rubble",        "color": "#7a6a58", "move_cost": 2, "defense_bonus": 0.15, "passable": true },
+		"park":          { "name": "Park",          "color": "#5f8a4a", "move_cost": 1, "defense_bonus": 0.0,  "passable": true },
+		"river":         { "name": "River",         "color": "#3b6ea5", "move_cost": 0, "defense_bonus": 0.0,  "passable": false },
+		"bridge":        { "name": "Bridge",        "color": "#9b8a6a", "move_cost": 1, "defense_bonus": 0.0,  "passable": true },
+		"fortification": { "name": "Fortification", "color": "#4a4a3a", "move_cost": 1, "defense_bonus": 0.5,  "passable": true }
+	},
+	"units": {
+		"infantry":  { "name": "Infantry Squad",    "movement": 3, "range": 1, "hp": 10, "attack": 4, "defense": 5, "ability": "dig_in",  "ability_desc": "+2 defense until moved" },
+		"armor":     { "name": "Armor Platoon",     "movement": 4, "range": 1, "hp": 15, "attack": 7, "defense": 4, "ability": "overrun", "ability_desc": "Move and attack in one action" },
+		"artillery": { "name": "Artillery Battery", "movement": 2, "range": 3, "hp": 8,  "attack": 6, "defense": 2, "ability": "barrage", "ability_desc": "Hits target tile and adjacent tiles at half damage" }
+	},
+	"city_seeds": { "berlin": 1001, "moscow": 1002, "leningrad": 1003, "stalingrad": 1004, "london": 1005 }
+}
