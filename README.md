@@ -51,6 +51,12 @@ tools\godot\Godot_v4.7.2-stable_win64.exe --path . --editor
 - Mouse wheel: zoom towards the cursor
 - Left or middle drag, arrow keys or WASD: pan
 
+### Time controls
+
+- Space or P: pause / resume (the game starts paused)
+- 1-4: speed 1x / 2x / 3x / 5x; + and -: faster / slower
+- Or use the PAUSE/PLAY and 1-4 buttons in the top bar
+
 ## Tests
 
 Headless tests live in `tests/`. Run the whole suite (import, a smoke run of the
@@ -76,7 +82,7 @@ The build follows the 20-step Build Order in the design document.
 | 2 | Data layer | done |
 | 3 | Strategic map rendering | done |
 | 4 | UI shell (top bar, info panel, tabbed side panel, minimap) | done |
-| 5 | Time system | pending |
+| 5 | Time system (pause, 4 speeds, date display) | done |
 | 6-20 | Production ... polish | pending |
 
 See [`PROGRESS.md`](PROGRESS.md) for details and architecture notes.

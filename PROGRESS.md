@@ -13,7 +13,7 @@ Run all tests: `powershell -ExecutionPolicy Bypass -File tests\run_all.ps1`
 | 2 Data layer | done | `tests/test_step2_data.gd`: 20 provinces in doc order with all fields, 6 terrains, 5 major cities, 3 playable nations + capitals, map geometry (1 loop per province, symmetric adjacency, anchors inside, connected graph, expected/forbidden adjacencies, determinism), 3 templates, 3 equipment, 15 techs (5/branch, 30-90 days, prerequisite chain), tech effects, calendar, GameState new game, JSON save-dict round trip |
 | 3 Strategic map rendering | done | `tests/test_step3_map.gd`: game scene loads, 20 province Polygon2D fills + labels, all 7 layers exist, fills use nation colour (German != Soviet, naval blue), border/coastline segments exist, recolour on `province_changed` after controller change, clicking every anchor selects that province and emits `province_selected`, off-map click clears and emits `selection_cleared`, no holes between polygons, zoom clamped min/max, pan moves + clamped to bounds, `focus_on`, zoom-towards-cursor keeps world point fixed, `build()` rebuild leaves no stale layers |
 | 4 UI shell | done | `tests/test_step4_ui.gd`: HUD under UI, root ignores mouse, panels block it; top bar position/height, date, nation, flag, manpower/oil/steel/factories values + refresh on `nation_changed`/`province_changed`/`day_passed`, 4 speed buttons mirror `speed_changed`; info panel opens on select, province fields (terrain, factories, resources, owner, garrison), garrison button -> division view (stats, orders), back button, naval zone has no buildings, occupied note + rebuild on change, close button clears map selection, off-map click hides, destroyed division falls back; 3 tabs with placeholders, `select_tab`, `clear_tab`, collapse/expand, layout; minimap bottom-right below side panel, transform round trip, whole map fits, click focuses camera, viewport rect follows zoom; injected click on minimap does not select, click on map area does; drag released over a panel ends the drag (no stuck panning); new game refreshes HUD |
-| 5 Time system | pending | |
+| 5 Time system | done | `tests/test_step5_time.gd`: autoloads present + order, speeds 1/2/3/5, new game resets to paused speed 1 (+ `speed_changed`), paused clock frozen, pause/speed API (clamping, faster/slower, unpause flag) emits `speed_changed`, 1x = 24 h per real second, fractional hours carry over, 1:2:3:5 ratio, per-frame hour cap, hour_passed -> day_passed -> month_passed order, leap year, Simulation ordering/replace/unregister and systems run before `day_passed`, game over freezes + pauses, `time_played`, top bar buttons drive TimeManager and labels follow hour/day, real-time advance at 5x, keyboard shortcuts |
 | 6-20 | pending | |
 
 ## Architecture
@@ -102,6 +102,25 @@ tests/                   test_base.gd harness, test_stepN_*.gd, run_all.ps1, log
   (`_event_world_pos`) instead of `get_global_mouse_position()`, so injected events (`root.push_input`) work in headless
   tests. `MapCamera._input` ends a drag on button release even when a HUD panel consumes the release.
 
+### Time system (step 5)
+- **TimeManager** (`scripts/autoload/time_manager.gd`): real time with pause, advancing in whole in-game hours.
+  At speed multiplier 1 a day takes `rules.seconds_per_day_at_1x` (1 s); `speeds` = `rules.speeds` [1,2,3,5] (floats from JSON).
+  One frame simulates at most `rules.max_hours_per_frame` (48) hours; fractional hours carry over.
+  Per hour: `GameState.hour`/`day_index` advance -> `Simulation.run_hour()` -> `EventBus.hour_passed(hour)`.
+  On a new day: `Simulation.run_day()` -> `EventBus.day_passed(day_index)` -> `month_passed(year, month)` on the 1st.
+  State: `paused` (starts true), `speed_index` (0-3). API: `toggle_pause()`, `pause()`, `resume()`, `set_paused(b)`,
+  `set_speed(i, unpause=false)` (clamped; does NOT unpause by default), `faster()`, `slower()`, `is_running()`,
+  `hours_per_second()`, `advance_hours(n)` / `advance_days(n)` (immediate, ignore pause - use in tests/AI).
+  Emits `speed_changed(index, paused)` after every change. Resets to paused speed 0 on `game_state_ready`; pauses on
+  `game_over`; clock frozen while `GameState.game_over`. Adds real delta to `GameState.time_played` while active (also paused).
+  Keys (`_unhandled_input`, only while a game is active): Space/P pause, 1-4 speed, +/= and - faster/slower.
+- **Simulation** (`scripts/autoload/simulation.gd`): fixed-order system dispatcher. **Steps 6+ register here instead of
+  connecting to day_passed** so state is updated before UI refreshes:
+  `Simulation.register_daily("production", callable, order)` / `register_hourly(...)`; lower order first, ties by
+  registration order, same name replaces. `unregister(name)`, `daily_systems()`, `hourly_systems()`, `hours_run`, `days_run`.
+  Suggested orders: production 10, research 20, recruitment 30, movement (hourly) 10, combat (hourly) 20, AI 90, autosave 100.
+- TopBar syncs from TimeManager on `_ready` (the start-up `speed_changed` fires before the HUD exists).
+
 ### Autoloads (order matters: later ones may use earlier ones)
 1. **EventBus** (`scripts/autoload/event_bus.gd`): signals only. All signals for later steps are already declared:
    `game_state_ready`, `game_over(result)`, `hour_passed(hour)`, `day_passed(day_index)`, `month_passed(year, month)`,
@@ -166,6 +185,6 @@ All have `to_dict()` / `static from_dict()`; add new fields to both when extendi
 - No functional bugs known.
 - Git prints "CRLF will be replaced by LF" warnings on commit (.gitattributes normalises line endings); harmless.
 - The Fronts / Units / Fog map layers are intentionally empty until steps 10 / 8 / 12.
-- The right panel's three tabs are placeholders until steps 6 / 7 / 13. The speed buttons do nothing until the step 5 TimeManager exists.
+- The right panel's three tabs are placeholders until steps 6 / 7 / 13. Speed buttons and the clock work since step 5.
 - Tests that simulate clicks should use `root.push_input` with the event `position` set. Headless doesn't move the OS cursor,
   so `get_global_mouse_position()` is stale there.
