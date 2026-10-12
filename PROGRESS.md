@@ -16,7 +16,8 @@ Run all tests: `powershell -ExecutionPolicy Bypass -File tests\run_all.ps1`
 | 5 Time system | done | `tests/test_step5_time.gd`: autoloads present + order, speeds 1/2/3/5, new game resets to paused speed 1 (+ `speed_changed`), paused clock frozen, pause/speed API (clamping, faster/slower, unpause flag) emits `speed_changed`, 1x = 24 h per real second, fractional hours carry over, 1:2:3:5 ratio, per-frame hour cap, hour_passed -> day_passed -> month_passed order, leap year, Simulation ordering/replace/unregister and systems run before `day_passed`, game over freezes + pauses, `time_played`, top bar buttons drive TimeManager and labels follow hour/day, real-time advance at 5x, keyboard shortcuts |
 | 6 Production system | done | `tests/test_step6_production.gd`: Production autoload + registered daily system; default factory split (17 German factories -> 9/4/4); allocation API clamping (no free factories, 0..assigned+free, unknown equipment); exact one-day numbers (output, steel income/use, manpower +800, `nation_changed`); fractional progress carry-over; oil shortage stalls armor (flag, progress capped at one unit, resumes); production_mult tech; factory build: cost 50 steel, refusals (foreign, naval, occupied, no steel with reason, province cap), completion after `factory_build_days` with `factory_completed`, occupied construction paused; allocation clamped after losing a province; save round trip keeps allocation + queue; capitulated nations skipped; Production tab UI (rows, -/+ buttons, output/stockpile labels, steel balance, build buttons only for owned provinces, build spends steel, construction list, disabled build + tooltip, refresh after a day) |
 | 7 Research system | done | `tests/test_step7_research.gd`: Research autoload + daily system after production; statuses (researched/available/locked) and refusal reasons (prerequisite, done, unknown, already researching, capitulated); available techs + branch progress; exact 30-day completion with `research_started`/`research_completed`/player `notify`, nothing one day early; light tanks unlocks armor; medium tanks armor attack +15%; switching keeps partial progress in `research_saved`, stop keeps progress, no progress while idle, resume; save round trip (current, progress, saved partials, researched); AI/minor nations research in parallel, capitulated skipped, no notify for AI; total war production +15%; Research tab UI (3-column grid, branch headers, tier layout, 15 buttons, Done/locked tooltips, click starts research, current tech label + progress bar + days left, per-button bar, template stats refresh, stop button) |
-| 8-20 | pending | |
+| 8 Military recruitment | done | `tests/test_step8_recruitment.gd`: Recruitment autoload + daily system after research; refusals (armor without light tanks, naval zone, foreign/occupied province, unknown template, manpower/equipment shortage with reason, refused recruit changes nothing); default deploy = capital, deploy list = owned+controlled land provinces; exact costs paid up front (manpower, equipment); cancel refunds; nothing one day early, division created on day 30 in the chosen province with `division_created` + player notify; lost deploy province falls back to the capital; queue save round trip; AI/minor nations train too; UI (panel in Production tab, 3 buttons with cost text, default capital, map selection of an owned province sets deploy, foreign ignored, dropdown, button recruits into chosen province, queue row cancel, disabled + reason tooltip); map unit icons (per province/owner box, count, type letters, follows new divisions) |
+| 9-20 | pending | |
 
 ## Architecture
 
@@ -168,6 +169,30 @@ tests/                   test_base.gd harness, test_stepN_*.gd, run_all.ps1, log
   row then tiers), `tech_cards[tid]` = {card, button, bar} (button coloured by status, description + reason in tooltip),
   `template_labels[division]` with effective stats / lock state. Refreshed in place at most once per frame.
 
+### Recruitment (step 8)
+- **Recruitment** autoload (`scripts/autoload/recruitment.gd`, after Research) registers
+  `Simulation.register_daily("recruitment", run_daily, 30)`. `recruit(nid, template, pid)` pays the template's
+  `manpower` and `equipment` (from `NationState.stockpile`) **up front** and appends
+  `{template, province, days_left: recruit_days}` to `NationState.recruit_queue`. All queued items train in parallel
+  (-1 day/day); at 0 the division is created with `GameState.add_division` and `division_created(id)` is emitted
+  (+ `notify("<Name> ready in <Province>")` for the player), then `nation_changed(nid)`.
+- Deploy provinces = land provinces the nation owns AND controls (`is_valid_deploy`, `deploy_provinces`,
+  `default_deploy_province` = capital else first). If the chosen province was lost, the division appears in the
+  default province; with none it waits at 0 days. Capitulated nations are skipped.
+- API: `recruit_error(nid, tid, pid)` ("" = ok, else reason), `can_recruit`, `cancel_recruit(nid, index)` (full refund),
+  `queue(nid)` (copies + `total_days`, `progress`), `queued_count(nid, tid="")`, `affordable_count(nid, tid)`,
+  `manpower_cost`, `equipment_cost`, `recruit_days`, `cost_text`, `template_name`, `is_unlocked`.
+  **AI (step 14)**: `recruit(nid, "infantry", Recruitment.default_deploy_province(nid))` when `can_recruit`.
+- UI: `RecruitPanel` (`scripts/ui/recruit_panel.gd`, `hud.recruit_panel`) sits below `ProductionPanel` in the
+  Production tab: `manpower_label`, `deploy_option` (OptionButton) + `deploy_province` (default capital; set by
+  `province_selected` when the player owns/controls the province; `set_deploy_province(pid)`), `recruit_buttons[template]`
+  ("Recruit <name> (cost)", disabled with reason tooltip), `queue_box` rows `Item<i>` with `Bar` and `Cancel`.
+- Map: `MapView.unit_icons()` returns `{province, owner, count, letters, rect}` - one box (UNIT_BOX 46x18 world units) per
+  province and owner, centred 26 px below the anchor, letters I/A/R for the templates present, filled with the nation
+  colour. `_draw_units` draws them; the Units layer refreshes on `division_created/destroyed/moved` and `province_changed`.
+  **Step 9**: divisions in transit still draw in `d.province`; hit-test `rect` from `unit_icons()` for clicking units.
+  **Step 12**: filter hidden provinces in `unit_icons()`/`_draw_units`.
+
 ### Autoloads (order matters: later ones may use earlier ones)
 1. **EventBus** (`scripts/autoload/event_bus.gd`): signals only. All signals for later steps are already declared:
    `game_state_ready`, `game_over(result)`, `hour_passed(hour)`, `day_passed(day_index)`, `month_passed(year, month)`,
@@ -231,7 +256,8 @@ All have `to_dict()` / `static from_dict()`; add new fields to both when extendi
 ## Known issues
 - No functional bugs known.
 - Git prints "CRLF will be replaced by LF" warnings on commit (.gitattributes normalises line endings); harmless.
-- The Fronts / Units / Fog map layers are intentionally empty until steps 10 / 8 / 12.
+- The Fronts / Fog map layers are intentionally empty until steps 10 / 12 (Units drawn since step 8).
+- Unit icons are not clickable yet (division selection is via the info panel's garrison buttons); step 9 adds clicking.
 - The Diplomacy tab is a placeholder until step 13 (Production filled in step 6, Research in step 7). AI nations do not pick research until step 14. Speed buttons and the clock work since step 5.
 - Production balance numbers (equipment costs, default split) are first-pass; step 20 balance pass may tune them.
 - Minor nations run the same economy with their default split (no AI changes until step 14).
