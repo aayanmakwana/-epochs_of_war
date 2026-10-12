@@ -37,7 +37,7 @@ func _ready() -> void:
 	EventBus.division_selected.connect(show_division)
 	EventBus.game_state_ready.connect(_on_game_state_ready)
 	for sig in ["province_changed", "nation_changed", "day_passed", "division_created", "division_destroyed",
-			"battle_started", "battle_ended", "province_captured", "supply_changed"]:
+			"battle_started", "battle_ended", "province_captured", "supply_changed", "fog_changed"]:
 		EventBus.connect(sig, _mark_dirty_any)
 	EventBus.division_moved.connect(func(_d: int, _a: String, _b: String) -> void: mark_dirty())
 	EventBus.division_order_changed.connect(func(_d: int) -> void: mark_dirty())
@@ -115,7 +115,14 @@ func rebuild() -> void:
 		"province":
 			_build_province(current_province)
 		"division":
-			if GameState.division(current_division) == null:
+			var dv: DivisionState = GameState.division(current_division)
+			if dv != null and dv.owner != GameState.player_nation and not _is_visible(dv.province):
+				# Step 12: a foreign division under fog -> province view ("Unknown" garrison).
+				current_province = dv.province
+				mode = "province"
+				current_division = -1
+				_build_province(current_province)
+			elif GameState.division(current_division) == null:
 				# Division gone (destroyed): fall back to its last province.
 				mode = "province"
 				current_division = -1
@@ -212,7 +219,15 @@ func _build_province(pid: String) -> void:
 	garrison.add_theme_constant_override("separation", 3)
 	var divs: Array = GameState.divisions_in(pid) if GameState.active else []
 	divs.sort_custom(func(a: DivisionState, b: DivisionState) -> bool: return a.id < b.id)
-	if divs.is_empty():
+	if not _is_visible(pid):
+		# Step 12: fog of war hides the garrison.
+		divs = []
+		var unknown := UIStyle.label("Unknown", 14, UIStyle.TEXT_DIM)
+		unknown.name = "FogUnknown"
+		unknown.tooltip_text = "Hidden by fog of war"
+		unknown.mouse_filter = Control.MOUSE_FILTER_PASS
+		garrison.add_child(unknown)
+	elif divs.is_empty():
 		garrison.add_child(UIStyle.label("No divisions", 14, UIStyle.TEXT_DIM))
 	for d: DivisionState in divs:
 		garrison.add_child(_division_button(d))
@@ -231,7 +246,7 @@ func _build_province(pid: String) -> void:
 ## Step 10: battle progress for a province under attack.
 func _build_battle(pid: String) -> void:
 	var combat := get_node_or_null("/root/Combat")
-	if combat == null or not GameState.active or not combat.has_battle(pid):
+	if combat == null or not GameState.active or not combat.has_battle(pid) or not _is_visible(pid):
 		return
 	var b: Dictionary = combat.battle_at(pid)
 	content.add_child(UIStyle.section_header("Battle"))
@@ -355,6 +370,12 @@ func _build_division(d: DivisionState) -> void:
 		EventBus.divisions_selected.emit([])
 		show_province(pid))
 	content.add_child(back)
+
+
+## Step 12: can the player see [param pid]? (true without the Fog autoload / game)
+func _is_visible(pid: String) -> bool:
+	var fog := get_node_or_null("/root/Fog")
+	return fog == null or not GameState.active or fog.is_visible(pid)
 
 
 func _max_stats(d: DivisionState) -> Dictionary:

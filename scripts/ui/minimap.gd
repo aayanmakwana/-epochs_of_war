@@ -29,6 +29,7 @@ func _ready() -> void:
 	add_child(canvas)
 	EventBus.province_changed.connect(func(_p: String) -> void: canvas.queue_redraw())
 	EventBus.game_state_ready.connect(canvas.queue_redraw)
+	EventBus.fog_changed.connect(canvas.queue_redraw)   # step 12: hidden provinces drawn grey
 
 
 func _style() -> StyleBoxFlat:
@@ -94,7 +95,7 @@ class MinimapCanvas extends Control:
 		var t := m.map_transform()
 		draw_set_transform_matrix(t)
 		for pid in GameData.province_ids:
-			var col: Color = m.map_view.province_color(pid) if m.map_view else GameData.nation_color(GameData.province(pid).get("owner", ""))
+			var col: Color = m.map_view.province_display_color(pid) if m.map_view else GameData.nation_color(GameData.province(pid).get("owner", ""))
 			for loop: PackedVector2Array in GameData.geometry.outlines.get(pid, []):
 				draw_colored_polygon(loop, col)
 		draw_set_transform_matrix(Transform2D.IDENTITY)

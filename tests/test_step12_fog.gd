@@ -193,6 +193,17 @@ func ui_tests(gs: Node, bus: Node, fog: Node) -> void:
 	await process_frame
 	g = info.content.find_child("Garrison", true, false)
 	check(g != null and info.content.find_child("Division_*", true, false) != null, "visible enemy garrison listed")
+	# A foreign division under fog cannot be inspected.
+	var sov = gs.divisions_in("moscow")[0]
+	bus.division_selected.emit(sov.id)
+	await process_frame
+	check(info.mode == "province" and info.current_province == "moscow", "hidden enemy division -> province view")
+	g = info.content.find_child("Garrison", true, false)
+	check(g != null and g.get_child(0).text == "Unknown", "hidden division shows Unknown garrison")
+	# Battle markers hidden under fog.
+	gs.battles["moscow"] = {"province": "moscow", "attacker": "uk", "defender": "ussr", "attackers": [], "days": 0, "start_day": 0}
+	check(map.battle_markers().is_empty(), "no battle marker in a hidden province")
+	gs.battles.erase("moscow")
 	# Reveal by capture updates the map.
 	cb_capture("poland")
 	await process_frame

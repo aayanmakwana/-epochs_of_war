@@ -62,6 +62,9 @@ func _ready() -> void:
 	# Step 11: out-of-supply overlay.
 	EventBus.supply_changed.connect(func(_n: String) -> void: _on_battles_changed())
 	EventBus.province_changed.connect(func(_p: String) -> void: refresh_layer("Fronts"))
+	# Step 12: fog of war.
+	EventBus.fog_changed.connect(_on_fog_changed)
+	EventBus.game_state_ready.connect(_on_fog_changed)
 
 
 func _on_battles_changed(_a: Variant = null, _b: Variant = null, _c: Variant = null) -> void:
@@ -162,7 +165,7 @@ func province_color(pid: String) -> Color:
 
 
 func _update_fill(pid: String) -> void:
-	var col := province_color(pid)
+	var col := province_display_color(pid)
 	for poly: Polygon2D in fill_nodes.get(pid, []):
 		poly.color = col
 
@@ -419,6 +422,8 @@ func front_borders() -> Array:
 		var parts := key.split("|")
 		if parts.size() < 2 or parts[1] == "" or GameData.is_naval(parts[0]) or GameData.is_naval(parts[1]):
 			continue
+		if not is_province_visible(parts[0]) and not is_province_visible(parts[1]):
+			continue   # step 12: fronts between two fogged provinces are unknown
 		var ca := _controller(parts[0])
 		var cb := _controller(parts[1])
 		var na: NationState = GameState.nation(ca)
@@ -435,7 +440,7 @@ func battle_markers() -> Array:
 	var pids: Array = GameState.battles.keys()
 	pids.sort()
 	for pid in pids:
-		if geometry.anchors.has(pid):
+		if geometry.anchors.has(pid) and is_province_visible(pid):
 			out.append({"province": pid, "pos": geometry.anchors[pid] + Vector2(0, -38)})
 	return out
 
@@ -515,6 +520,8 @@ func unit_icons() -> Array:
 	for pid in GameData.province_ids:
 		if not by_prov.has(pid) or not geometry.anchors.has(pid):
 			continue
+		if not is_province_visible(pid):
+			continue   # step 12: no unit counters under fog
 		var g: Dictionary = by_prov[pid]
 		var owners: Array = g.keys()
 		owners.sort()
@@ -621,5 +628,62 @@ func _on_day_for_units(_day: int) -> void:
 			return
 
 
-func _draw_fog(_canvas: CanvasItem) -> void:
-	pass  # Step 12: darken provinces not visible to the player.
+# --- Fog of war (step 12) ------------------------------------------------------
+
+const FOG_LAND := Color(0.36, 0.36, 0.37)
+const FOG_SEA := Color(0.24, 0.24, 0.25)
+const FOG_HATCH := Color(0, 0, 0, 0.12)
+
+
+## True if the player can see [param pid] (always true without the Fog autoload).
+func is_province_visible(pid: String) -> bool:
+	var fog := get_node_or_null("/root/Fog")
+	return fog == null or fog.is_visible(pid)
+
+
+## Provinces hidden from the player, design-doc order.
+func fogged_provinces() -> PackedStringArray:
+	var fog := get_node_or_null("/root/Fog")
+	if fog == null or not GameState.active:
+		return PackedStringArray()
+	return fog.player_hidden_provinces()
+
+
+## Colour actually drawn: the political colour, or grey under fog.
+## The minimap uses this too.
+func province_display_color(pid: String) -> Color:
+	if GameState.active and not is_province_visible(pid):
+		return FOG_SEA if GameData.is_naval(pid) else FOG_LAND
+	return province_color(pid)
+
+
+func _on_fog_changed() -> void:
+	var hidden := {}
+	for pid in fogged_provinces():
+		hidden[pid] = true
+	for pid in fill_nodes:
+		_update_fill(pid)
+	for pid in label_nodes:
+		(label_nodes[pid] as Label).modulate.a = 0.6 if hidden.has(pid) else 1.0
+	for layer_name in ["Borders", "Fronts", "Units", "Fog"]:
+		refresh_layer(layer_name)
+
+
+## Light diagonal hatch over hidden provinces (the grey fill does the rest).
+func _draw_fog(canvas: CanvasItem) -> void:
+	for pid in fogged_provinces():
+		for loop: PackedVector2Array in geometry.outlines.get(pid, []):
+			if loop.size() < 3:
+				continue
+			var r := Rect2(loop[0], Vector2.ZERO)
+			for p in loop:
+				r = r.expand(p)
+			var span := r.size.x + r.size.y
+			var t := 0.0
+			while t <= span:
+				var a := Vector2(r.position.x + t, r.position.y)
+				var b := Vector2(r.position.x + t - r.size.y, r.end.y)
+				for seg: PackedVector2Array in Geometry2D.intersect_polyline_with_polygon(PackedVector2Array([a, b]), loop):
+					if seg.size() >= 2:
+						canvas.draw_polyline(seg, FOG_HATCH, 2.0, true)
+				t += 24.0
