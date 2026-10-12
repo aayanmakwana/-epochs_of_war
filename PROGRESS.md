@@ -23,7 +23,8 @@ Run all tests: `powershell -ExecutionPolicy Bypass -File tests\run_all.ps1`
 | 12 Fog of war | done | `tests/test_step12_fog.gd`: Fog autoload + `EventBus.fog_changed`; Germany at start: own provinces and neighbours visible (Poland, Czechoslovakia, Austria, France, North Sea, Belarus, Leningrad), distant ones hidden (Moscow, Ukraine, Urals, Siberia, London, Mediterranean, Romania, Hungary ...); rule check for every province vs an independent computation (germany/ussr/uk, after occupation, move, capture); occupied province without divisions is no sight source for the owner, the occupier gains sight; a division moved into Belarus (military access) reveals Moscow/Ukraine + `fog_changed`, destroying it hides Moscow again; capturing Poland reveals Ukraine (not Romania), losing it hides it; no signal when nothing changes; save/load; USSR player; `set_enabled(false)` shows everything; UI: `fogged_provinces()`, grey fill (`province_display_color`), no unit icons/battle markers in hidden provinces, enemy icons in visible ones kept, info panel "Unknown" garrison + no division buttons in hidden provinces, hidden foreign division -> province view, map recolours after reveal by capture |
 | 13 Diplomacy | done | `tests/test_step13_diplomacy.gd`: Diplomacy autoload + daily system; `war_goal_days` = 30; nobody at war at start, France "Neutral"; declare refused without war goal (changes nothing); justify on self refused, no double justification, days left, declare blocked while justifying, not ready one day early, ready on day 30, war goal survives save/load; declare -> symmetric `at_war_with`, `war_declared`, goal consumed, no second declaration, Movement sees hostile, no pact/access while at war; cancel justification; pact: accepted at peace, `pact_signed`, both ways, cancels war goal, blocks justification both ways and declaration, no duplicate, break pact re-enables war, save/load; access: grants passability, `military_access_granted(host, guest)`, one way, no duplicate, division moves in via access, war with the host revokes access and sends the division to its capital, revoke; capitulated targets refused; scripted wars: AI Germany at war with Poland on 1 Sep 1939 (not on 31 Aug), France on 10 May 1940 (symmetric), player Germany never forced; UI: placeholder removed, `hud.diplomacy_panel` in tab, one row per other nation (none for the player), status text, declare disabled with reason, Justify -> justifying status + Cancel, Declare enabled when ready and declares war, pact/access disabled at war, pact and access buttons work and status updates |
 | 14 AI opponent | done | `tests/test_step14_ai.gd`: AI autoload + daily system, enabled by default (`rules.ai_enabled`); `is_ai`/`ai_nations` (player and capitulated excluded); `auto_resolves_tactical` true for AI, false for the player; production: all factories to infantry equipment below the reserve, else half infantry equipment / armor / rest artillery (priority order, no idle factories), no armor without light tanks, applied by the daily tick; research: infantry > armor > doctrine via the daily tick, keeps current, idle when tree done, player untouched; recruitment: infantry in the capital paid with manpower, queue cap, nothing without manpower or equipment, divisions appear after training; threats: scripted war opponents within `ai_prepare_days` (not before, not when the attacker is the player), war goal targets; positioning: border set = provinces adjacent to the enemy (independent check), exactly half (rounded up) sent, only to border provinces, spread out, idempotent, divisions arrive, capital not stripped; attack: no attack below 2x the garrison, attack at 2x, none with exhausted org, undefended province attacked, full daily loop: battle_started + Poland captured; player nation's production/research/recruits/divisions untouched for 40 days; `enabled=false` stops it |
-| 15-20 | pending | |
+| 15 Tactical battle map | done | `tests/test_step15_tactical_map.gd`: grid size 20 from tactical.json; seed = hash(city id), same city -> identical tiles/objectives, all 5 cities differ; per city: 400 tiles of the 7 types (all 7 seen across cities), river >= 10 tiles, >= 1 bridge, buildings/streets/park/fortifications present, river is a barrier without its bridges; 3 distinct passable objectives outside deploy zones, #1 near the centre, all reachable from both deploy zones (finite path cost); attacker zone south/west, defender north/east, disjoint, NW corner neutral; lookups (building +30%, fortification +50%, rubble half cover + cost 2, river impassable); deployment: 3 tactical units per division with doc stats, HP scaled by division HP, unique ids, auto-deploy on free own tiles with artillery behind, swap, refusals (objective, outside zone, enemy zone, river, off map), withdraw/reserve, overflow to reserve; UI: `tactical_battle_requested` opens the view from game.gd, clock paused, World/HUD hidden + disabled, player side, layout (turn counter top-right, unit list left, 5 disabled action buttons bottom, grid centred), hover info, list select + grid click places, enemy not selectable, To reserve / Auto-deploy, Return restores the strategic view and the Combat battle continues |
+| 16-20 | pending | |
 
 ## Architecture
 
@@ -348,6 +349,62 @@ tests/                   test_base.gd harness, test_stepN_*.gd, run_all.ps1, log
   player is attacker or defender; battles between AI nations always auto-resolve.** `is_ai(nid)`, `ai_nations()`.
 - Debug/test helpers: `days_run`, `last_orders` ([{nation, kind: recruit|position|attack, division, target}], cleared each day),
   `destination(d)`.
+
+### Tactical battle map (step 15)
+- Files: `scripts/tactical/tactical_map.gd` (`TacticalMap`, pure), `tactical_unit.gd` (`TacticalUnit`, pure),
+  `tactical_deployment.gd` (`TacticalDeployment`, pure), `tactical_grid.gd` (`TacticalGrid`, Control drawing the grid),
+  `tactical_view.gd` (`TacticalView`, the screen) + `scenes/tactical/tactical_view.tscn` (root Control with that script;
+  all children are built in code). No new autoload; `time_manager.gd` unchanged. Tests may reference the three pure classes
+  statically; `TacticalView` uses autoloads, so load the scene at runtime.
+- **TacticalMap** `generate(city_id, grid_size=20, tile_defs={})` (pass `GameData.tactical.tiles`; falls back to
+  `DEFAULT_TILES`). RNG seed = `hash(city_id)` (`tactical.json` `city_seeds` is NOT used). Layout: street lines every 4-5 tiles,
+  blocks of building (some rubble) or park, rubble on a few streets, a meandering river edge to edge (`river_orientation`
+  "horizontal"|"vertical") with 2-3 full-width `bridges` (approach tiles forced to street), `objectives` (3 x Vector2i: [0] =
+  city centre, 2 key buildings leaning north-east, >= 1 tile clear of the deploy bands), 1-2 fortifications next to each objective.
+  Coordinates `Vector2i(x, y)`, y down (row 0 = north); `tiles` is a row-major PackedStringArray.
+  Queries: `in_bounds`, `tile(p)`, `tile_def`, `tile_name`, `tile_color`, `is_passable`, `move_cost(p)` (-1 impassable),
+  `defense_bonus(p)` (0.3 = +30%), `is_objective`, `count(type)`, `zone_of(p)` ("attacker" = 3-deep south/west bands,
+  "defender" = north/east bands, "" = elsewhere incl. NW/SE overlap corners), `is_deploy_tile(side, p)` (zone + passable + not
+  objective), `deploy_tiles(side)` (front line first), `neighbors(p)` (4-dir, `DIRS`), `reachable_from(starts)` (BFS set),
+  `path_cost(from, to)` (Dijkstra on move_cost, -1 unreachable). **Step 16** should use `move_cost` / `path_cost`-style
+  Dijkstra with the unit's movement points; diagonal moves are not used anywhere.
+- **TacticalUnit**: `id, type (infantry|armor|artillery), name, side (attacker|defender), nation, division_id, pos (NO_POS =
+  reserve), hp, max_hp, movement, attack_range, attack, defense, ability (dig_in|overrun|barrage), facing` (starts (0,-1) for
+  attackers, (0,1) for defenders; **step 17 flanking** should update it on move). `create(...)` from `GameData.tactical.units[type]`,
+  HP = round(max_hp x division hp fraction), min 1. `is_deployed()`, `letter()` (I/A/R). Step 16 will need to add per-turn
+  fields (moves_left, acted, dug_in, overwatch).
+- **TacticalDeployment** (`map, province, attacker, defender, units`): `add_division(side, nation, div_id, unit_types,
+  unit_stats, hp_fraction)` (unit_types = `GameData.divisions[t].tactical_units`), `unit(id)`, `unit_at(p)`, `units_of(side)`,
+  `reserve(side)`, `free_deploy_tiles`, `is_fully_deployed`, `auto_deploy(side)` (non-artillery on front tiles, artillery on the
+  rearmost, overflow stays in reserve), `placement_error(uid, p)` ("" ok), `can_place`, `place_unit(uid, p)` (swaps with an own
+  unit), `withdraw(uid)`. Steps 16/17 can extend this class (or wrap it) into the battle state.
+- **TacticalView** (Control, full rect, own `UIStyle` theme): `open(pid)` reads `Combat.battle_at(pid)` (attackers via
+  `Combat.attackers`, defenders via `Combat.defenders`); with no battle the province's controller divisions defend against the
+  player. `open_with(pid, attacker, defender, attacker_divs, defender_divs)` for explicit forces. Both call `TimeManager.pause()`
+  (in `open`), generate the map, split divisions into units and auto-deploy both sides. Fields: `province, map, deployment,
+  player_side` ("defender" if the player is the defender, else "attacker"), `phase` ("deployment"), `turn` (1),
+  `turn_limit` (tactical.json 20), `selected_unit`, `grid`, `title_label`, `phase_label`, `turn_label` (top-right, "Turn 1 / 20"),
+  `unit_list` + `unit_buttons[uid]` (player's units grouped by division; toggle buttons), `tile_info` (hover text via
+  `tile_text(p)`), `hint_label` (refusal reasons), `action_buttons[name]` for `ACTIONS` = Move, Attack, Ability, Overwatch,
+  End Turn (**disabled placeholders**), `auto_deploy_button`, `withdraw_button` ("To reserve"), `return_button`.
+  Methods: `select_unit(uid)` (own side only, emits `unit_selected(uid)`), `click_tile(p)` (deployment: place selected unit /
+  select own unit; ignored when `phase != "deployment"`), `auto_deploy()`, `withdraw_selected()`, `close()` (emits
+  `closed(province)`), `_refresh()` (labels, buttons, grid redraw).
+- **TacticalGrid**: `setup(map, deployment, tile_size)`, `tile_at(local)`, `tile_rect(p)`, `tile_center(p)`, `valid_tiles()` (tiles the
+  selected unit may be placed on, outlined green), `selected_unit`, `hovered`, colours `attacker_color`/`defender_color` (nation
+  colours), `show_zones`. Signals `tile_clicked(tile, button)` (left/right press via `_gui_input`), `tile_hovered(tile)`.
+  Draws tiles with draw_rect + per-type decoration, zone tint + inner edge line, numbered gold objective markers, units (nation
+  colour box, letter, HP bar, facing tick, yellow frame when selected).
+- **Opening from game.gd**: `game.open_tactical(pid)` (connected to `EventBus.tactical_battle_requested`) adds a CanvasLayer
+  "TacticalLayer" (layer 10) with the view, hides `$World` (+ `PROCESS_MODE_DISABLED`) and the `$UI` layer, then `view.open(pid)`.
+  `game.close_tactical()` (on the view's `closed`, and on `game_state_ready`) frees it and restores everything. `game.tactical_view`
+  is the open view or null. **Nothing emits `tactical_battle_requested` yet**: the "Battle for X. Command your forces?" prompt
+  (major city + player involved + `AI.auto_resolves_tactical` false, hook on `battle_started`) belongs to step 17. "Return to map"
+  just closes the view; the strategic Combat battle keeps auto-resolving (clock stays paused until the player resumes).
+- **Step 16 hooks**: enable `action_buttons` when `phase` becomes "battle" (add a Start battle / end-deployment control);
+  extend `click_tile` for the battle phase (move/attack targets for `selected_unit`, using `grid.valid_tiles()`-style highlighting —
+  generalise `valid_tiles()` to the current action); unit selection already flows through `select_unit` / `unit_selected`, the unit
+  list and grid clicks; update `turn_label` via `turn`. Dev screenshot: `tests/screenshot.gd -- --tactical=berlin`.
 
 ### Autoloads (order matters: later ones may use earlier ones)
 1. **EventBus** (`scripts/autoload/event_bus.gd`): signals only. All signals for later steps are already declared:
