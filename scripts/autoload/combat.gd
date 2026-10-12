@@ -36,6 +36,129 @@ func _ready() -> void:
 	Simulation.register_daily("combat", run_daily, 45)
 	Simulation.register_daily("combat_recovery", run_recovery, 50)
 	EventBus.division_moved.connect(_on_division_moved)
+	EventBus.game_state_ready.connect(_on_game_state_ready)
+
+
+func _on_game_state_ready() -> void:
+	pending_prompts.clear()
+	for pid in GameState.battles:
+		GameState.battles[pid].erase("tactical")   # no tactical view survives a load
+
+
+# --- Tactical city battles (step 17) ---------------------------------------------
+#
+# A battle that starts in a major city with the player as attacker or defender
+# raises a prompt (clock paused, EventBus.tactical_prompt_requested). Yes ->
+# accept_tactical: the battle is flagged "tactical" (daily ticks skip it) and
+# EventBus.tactical_battle_requested opens the TacticalView. No -> decline_tactical:
+# normal daily auto-resolve. The view reports back with apply_tactical_result
+# (battle finished) or abandon_tactical (left early: losses so far applied, then
+# auto-resolve continues).
+
+## Provinces whose "Command your forces?" prompt is waiting for an answer.
+var pending_prompts: Array[String] = []
+
+
+func should_prompt(pid: String) -> bool:
+	if not bool(GameData.rule("tactical_prompts", true)) or not GameData.is_major_city(pid):
+		return false
+	var b := battle_at(pid)
+	if b.is_empty() or not _involves_player(b):
+		return false
+	var ai := get_node_or_null("/root/AI")
+	return ai == null or not ai.auto_resolves_tactical(GameState.player_nation)
+
+
+func request_prompt(pid: String) -> void:
+	if pending_prompts.has(pid):
+		return
+	pending_prompts.append(pid)
+	var tm := get_node_or_null("/root/TimeManager")
+	if tm:
+		tm.pause()
+	EventBus.tactical_prompt_requested.emit(pid)
+
+
+func is_tactical(pid: String) -> bool:
+	return bool(battle_at(pid).get("tactical", false))
+
+
+## Player chose to command the battle: flag it and open the tactical view.
+func accept_tactical(pid: String) -> bool:
+	pending_prompts.erase(pid)
+	if not has_battle(pid):
+		return false
+	GameState.battles[pid]["tactical"] = true
+	EventBus.tactical_battle_requested.emit(pid)
+	return true
+
+
+## Player chose to auto-resolve: nothing changes, daily combat resolves it.
+func decline_tactical(pid: String) -> void:
+	pending_prompts.erase(pid)
+	if has_battle(pid):
+		GameState.battles[pid].erase("tactical")
+
+
+func _max_hp(d: DivisionState) -> float:
+	return maxf(1.0, float(_stats(d).hp))
+
+
+## HP loss proportional to the tactical casualty fraction (of the HP it fought with).
+func _apply_casualties(casualties: Dictionary) -> void:
+	for did in casualties:
+		var d: DivisionState = GameState.division(int(did))
+		if d == null:
+			continue
+		var f := clampf(float(casualties[did]), 0.0, 1.0)
+		d.hp = maxf(0.0, d.hp * (1.0 - f))
+		d.organization = maxf(0.0, d.organization * (1.0 - f))
+
+
+## Apply a finished tactical battle to the strategic layer. Every division loses
+## HP in proportion to its tactical casualties; the losing side additionally loses
+## a share of its remaining HP (defenders heavy: rules.tactical_defender_defeat_loss,
+## attackers moderate: rules.tactical_attacker_defeat_loss) and all organization.
+## Attacker won: surviving defenders retreat, the attackers enter and the province
+## changes hands. Defender won: the attackers stay in (return to) their origin
+## province. Emits tactical_battle_finished.
+func apply_tactical_result(pid: String, attacker_won: bool, casualties: Dictionary) -> void:
+	pending_prompts.erase(pid)
+	_apply_casualties(casualties)
+	var b := battle_at(pid)
+	if not b.is_empty():
+		b.erase("tactical")
+		var losers: Array[DivisionState] = defenders(pid, b.attacker) if attacker_won else attackers(pid)
+		var extra := _r("tactical_defender_defeat_loss", 0.4) if attacker_won else _r("tactical_attacker_defeat_loss", 0.2)
+		for d in losers:
+			d.hp = maxf(0.0, d.hp - d.hp * extra)
+			d.organization = 0.0
+		for d in defenders(pid, b.attacker) + attackers(pid):
+			if d.hp < 0.5:
+				destroy(d)
+		if attacker_won:
+			for d in defenders(pid, b.attacker):
+				retreat(d)
+		_finish(pid, attacker_won)
+	else:
+		for did in casualties:
+			var d: DivisionState = GameState.division(int(did))
+			if d and d.hp < 0.5:
+				destroy(d)
+	EventBus.tactical_battle_finished.emit(pid, attacker_won)
+
+
+## The player left the tactical view before the end: apply the losses so far and
+## let the strategic battle auto-resolve from here.
+func abandon_tactical(pid: String, casualties: Dictionary) -> void:
+	pending_prompts.erase(pid)
+	_apply_casualties(casualties)
+	for did in casualties:
+		var d: DivisionState = GameState.division(int(did))
+		if d and d.hp < 0.5:
+			destroy(d)
+	if has_battle(pid):
+		GameState.battles[pid].erase("tactical")
 
 
 func _r(key: String, def: float) -> float:
@@ -161,6 +284,8 @@ func _on_hostile_entry(d: DivisionState, pid: String) -> bool:
 		if _involves_player(b):
 			EventBus.notify.emit("Battle for %s: %s attacks %s" % [GameData.province_name(pid),
 				GameData.nation_name(b.attacker), GameData.nation_name(b.defender)])
+		if should_prompt(pid):
+			request_prompt(pid)
 	return false
 
 
@@ -180,6 +305,8 @@ func run_daily() -> void:
 
 func _tick(pid: String) -> void:
 	var b: Dictionary = GameState.battles[pid]
+	if bool(b.get("tactical", false)):
+		return   # the player commands this battle on the tactical map (step 17)
 	var atk := attackers(pid)
 	var dfs := defenders(pid, b.attacker)
 	if atk.is_empty() or dfs.is_empty():

@@ -67,6 +67,7 @@ signal nation_capitulated(nation_id: String, conqueror: String)
 
 # --- Tactical battles (steps 15-17) ---------------------------------------
 signal tactical_battle_requested(province_id: String)
+signal tactical_prompt_requested(province_id: String)
 signal tactical_battle_finished(province_id: String, attacker_won: bool)
 
 # --- Misc -------------------------------------------------------------------
