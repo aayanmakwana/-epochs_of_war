@@ -22,7 +22,8 @@ Run all tests: `powershell -ExecutionPolicy Bypass -File tests\run_all.ps1`
 | 11 Supply system | done | `tests/test_step11_supply.gd`: Supply autoload + daily system between combat and combat_recovery; all provinces in supply at start (UK Mediterranean excepted, see known issues); source = capital; isolated German-held Moscow cut off (`cut_off_provinces`), USSR without Moscow has no supply; military access reconnects Ukraine via Poland; losing Berlin cuts all German supply; attrition exact (-2% max HP, -5% max org per day), in-supply divisions recover while cut-off ones don't, player notify on loss/restore, supply survives save/load, `supply_changed` after reconnect, no attrition once supplied, destroyed at 0 HP, AI divisions take attrition, capitulated skipped; UI: overlay list, "In supply" yes/no in province (controller's supply) and division views |
 | 12 Fog of war | done | `tests/test_step12_fog.gd`: Fog autoload + `EventBus.fog_changed`; Germany at start: own provinces and neighbours visible (Poland, Czechoslovakia, Austria, France, North Sea, Belarus, Leningrad), distant ones hidden (Moscow, Ukraine, Urals, Siberia, London, Mediterranean, Romania, Hungary ...); rule check for every province vs an independent computation (germany/ussr/uk, after occupation, move, capture); occupied province without divisions is no sight source for the owner, the occupier gains sight; a division moved into Belarus (military access) reveals Moscow/Ukraine + `fog_changed`, destroying it hides Moscow again; capturing Poland reveals Ukraine (not Romania), losing it hides it; no signal when nothing changes; save/load; USSR player; `set_enabled(false)` shows everything; UI: `fogged_provinces()`, grey fill (`province_display_color`), no unit icons/battle markers in hidden provinces, enemy icons in visible ones kept, info panel "Unknown" garrison + no division buttons in hidden provinces, hidden foreign division -> province view, map recolours after reveal by capture |
 | 13 Diplomacy | done | `tests/test_step13_diplomacy.gd`: Diplomacy autoload + daily system; `war_goal_days` = 30; nobody at war at start, France "Neutral"; declare refused without war goal (changes nothing); justify on self refused, no double justification, days left, declare blocked while justifying, not ready one day early, ready on day 30, war goal survives save/load; declare -> symmetric `at_war_with`, `war_declared`, goal consumed, no second declaration, Movement sees hostile, no pact/access while at war; cancel justification; pact: accepted at peace, `pact_signed`, both ways, cancels war goal, blocks justification both ways and declaration, no duplicate, break pact re-enables war, save/load; access: grants passability, `military_access_granted(host, guest)`, one way, no duplicate, division moves in via access, war with the host revokes access and sends the division to its capital, revoke; capitulated targets refused; scripted wars: AI Germany at war with Poland on 1 Sep 1939 (not on 31 Aug), France on 10 May 1940 (symmetric), player Germany never forced; UI: placeholder removed, `hud.diplomacy_panel` in tab, one row per other nation (none for the player), status text, declare disabled with reason, Justify -> justifying status + Cancel, Declare enabled when ready and declares war, pact/access disabled at war, pact and access buttons work and status updates |
-| 14-20 | pending | |
+| 14 AI opponent | done | `tests/test_step14_ai.gd`: AI autoload + daily system, enabled by default (`rules.ai_enabled`); `is_ai`/`ai_nations` (player and capitulated excluded); `auto_resolves_tactical` true for AI, false for the player; production: all factories to infantry equipment below the reserve, else half infantry equipment / armor / rest artillery (priority order, no idle factories), no armor without light tanks, applied by the daily tick; research: infantry > armor > doctrine via the daily tick, keeps current, idle when tree done, player untouched; recruitment: infantry in the capital paid with manpower, queue cap, nothing without manpower or equipment, divisions appear after training; threats: scripted war opponents within `ai_prepare_days` (not before, not when the attacker is the player), war goal targets; positioning: border set = provinces adjacent to the enemy (independent check), exactly half (rounded up) sent, only to border provinces, spread out, idempotent, divisions arrive, capital not stripped; attack: no attack below 2x the garrison, attack at 2x, none with exhausted org, undefended province attacked, full daily loop: battle_started + Poland captured; player nation's production/research/recruits/divisions untouched for 40 days; `enabled=false` stops it |
+| 15-20 | pending | |
 
 ## Architecture
 
@@ -327,6 +328,27 @@ tests/                   test_base.gd harness, test_stepN_*.gd, run_all.ps1, log
   (rebuilt when the player nation changes). Buttons: Justify/Cancel, Declare war, Offer pact/Break pact, Request access;
   disabled ones carry the reason in `tooltip_text`. Refreshes at most once per frame on day/nation/diplomacy signals.
 
+### AI opponent (step 14)
+- **AI** autoload (`scripts/autoload/ai.gd`, last, after Diplomacy) registers `Simulation.register_daily("ai", run_daily, 90)`
+  (after all world systems; orders given on day N start moving on day N+1). **Stateless** (nothing saved).
+  `enabled` (from `rules.ai_enabled`, default true) - **tests that assert exact world state while advancing days should set
+  `autoload("AI").enabled = false`** (done in `test_step8_recruitment.gd`; others pass with the AI on). Re-enable afterwards if needed
+  (each test is its own process, so it doesn't leak between files).
+- Per non-player, non-capitulated nation each day (`run_nation(nid)`): `manage_production` (`desired_allocation`: all factories to
+  infantry equipment while its stock < `ai_infantry_equipment_reserve` 200; else ceil(half) infantry equipment, ceil(half of rest)
+  armor if `armor_allowed` (light tanks + oil income or stock), rest artillery; decreases applied before increases),
+  `manage_research` (when idle, `next_research` = first of `Research.available_techs`, which is branch order infantry > armor > doctrine),
+  `manage_recruitment` (one infantry/day in `Recruitment.default_deploy_province` while `can_recruit`, max `ai_max_recruit_queue` 2 training),
+  `position_divisions` (`threat_nations` = at war + war goal targets + scripted war opponents within `ai_prepare_days` 60 of the date;
+  `border_provinces` = own land provinces adjacent to their land; ceil(half) of all divisions go to / stay on the border, idle ones
+  sent to the least covered reachable border province; one division stays in a non-border capital),
+  `launch_attacks` (`attack_targets` = hostile provinces adjacent to own territory; idle adjacent divisions with org >=
+  `ai_min_attack_org` 0.5 x max, minus one kept in the capital, plus those already attacking, >= 2 x `garrison` -> all ordered in).
+- `auto_resolves_tactical(nid)` (true for every nation but the player) - **steps 15-17: only prompt the tactical battle when the
+  player is attacker or defender; battles between AI nations always auto-resolve.** `is_ai(nid)`, `ai_nations()`.
+- Debug/test helpers: `days_run`, `last_orders` ([{nation, kind: recruit|position|attack, division, target}], cleared each day),
+  `destination(d)`.
+
 ### Autoloads (order matters: later ones may use earlier ones)
 1. **EventBus** (`scripts/autoload/event_bus.gd`): signals only. All signals for later steps are already declared:
    `game_state_ready`, `game_over(result)`, `hour_passed(hour)`, `day_passed(day_index)`, `month_passed(year, month)`,
@@ -404,8 +426,11 @@ All have `to_dict()` / `static from_dict()`; add new fields to both when extendi
   for clicks near the screen edge instead of `root.push_input`.
 - Diplomacy (step 13): AI acceptance is trivial (pacts/access accepted whenever not at war); capital capture does not
   end wars yet (step 19); France-UK "alliance" is only pact + access. `test_step4_ui.gd` no longer expects a Diplomacy placeholder.
-- All three side tabs are filled since step 13. AI nations do not pick research until step 14. Speed buttons and the clock work since step 5.
+- All three side tabs are filled since step 13. Speed buttons and the clock work since step 5.
 - Production balance numbers (equipment costs, default split) are first-pass; step 20 balance pass may tune them.
-- Minor nations run the same economy with their default split (no AI changes until step 14).
+- AI (step 14) is deliberately minimal: no diplomacy AI, no factory building, no naval moves (the UK AI cannot reach the
+  continent, its divisions stay home), it ignores fog, does not pull back out-of-supply divisions, and uses division counts (not
+  strength) for the 2x attack rule. With the player as Germany nothing starts a war unless the player declares one.
+  The AI re-sets its factory allocation daily, so manual changes to AI nations' allocation are overwritten.
 - Tests that simulate clicks should use `root.push_input` with the event `position` set. Headless doesn't move the OS cursor,
   so `get_global_mouse_position()` is stale there.

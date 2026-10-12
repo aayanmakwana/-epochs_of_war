@@ -91,6 +91,7 @@ The build follows the 20-step Build Order in the design document.
 | 11 | Supply system (provinces connected to the capital through friendly territory are in supply; out-of-supply divisions take daily HP/organization attrition; hatched map overlay and "In supply" info rows) | done |
 | 12 | Fog of war (only provinces you control, provinces with your divisions and their neighbours are visible; hidden provinces are drawn grey on the map and minimap, enemy units and battles there are not shown, garrison reads "Unknown"; moving or capturing reveals more) | done |
 | 13 | Diplomacy (Diplomacy tab: justify a war goal over 30 days, then declare war; non-aggression pacts block war; military access lets divisions move and draw supply through another nation; AI Germany declares war on Poland on 1 Sep 1939 and on France on 10 May 1940) | done |
-| 14-20 | AI ... polish | pending |
+| 14 | AI opponent (every non-player nation: factories prioritise infantry equipment > armor > artillery, research infantry > armor > doctrine, recruits infantry when it has manpower and equipment, sends half its divisions to borders facing enemies, attacks when it has 2x the adjacent enemy garrison, never enters tactical mode) | done |
+| 15-20 | Tactical battles ... polish | pending |
 
 See [`PROGRESS.md`](PROGRESS.md) for details and architecture notes.
