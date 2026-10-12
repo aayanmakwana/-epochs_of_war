@@ -10,9 +10,9 @@ signal tab_changed(tab_name: String)
 
 const TABS: PackedStringArray = ["Production", "Research", "Diplomacy"]
 const PLACEHOLDERS := {
-	"Production": "Assign factories to equipment, see output per day and build new factories.\n\n(Coming in step 6.)",
-	"Research": "Pick one of 15 technologies in the Infantry, Armor and Doctrine branches.\n\n(Coming in step 7.)",
-	"Diplomacy": "Declare war, offer non-aggression pacts and request military access.\n\n(Coming in step 13.)",
+	"Production": "Assign factories to equipment, see output per day and build new factories.",
+	"Research": "Pick one of 15 technologies in the Infantry, Armor and Doctrine branches.",
+	"Diplomacy": "Declare war, offer non-aggression pacts and request military access.",
 }
 
 var tabs: TabContainer
