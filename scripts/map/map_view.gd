@@ -59,6 +59,9 @@ func _ready() -> void:
 	# Step 10: fronts and battle markers.
 	for sig in ["battle_started", "battle_ended", "province_captured", "war_declared"]:
 		EventBus.connect(sig, _on_battles_changed)
+	# Step 11: out-of-supply overlay.
+	EventBus.supply_changed.connect(func(_n: String) -> void: _on_battles_changed())
+	EventBus.province_changed.connect(func(_p: String) -> void: refresh_layer("Fronts"))
 
 
 func _on_battles_changed(_a: Variant = null, _b: Variant = null, _c: Variant = null) -> void:
@@ -437,7 +440,42 @@ func battle_markers() -> Array:
 	return out
 
 
+const SUPPLY_SHADE := Color(0, 0, 0, 0.35)
+const SUPPLY_HATCH := Color(1.0, 0.55, 0.1, 0.75)
+const SUPPLY_HATCH_STEP := 18.0
+
+
+## Step 11: provinces the player controls that are cut off from the capital.
+func out_of_supply_provinces() -> PackedStringArray:
+	var sp := get_node_or_null("/root/Supply")
+	if sp == null or not GameState.active or GameState.player_nation == "":
+		return PackedStringArray()
+	return sp.cut_off_provinces(GameState.player_nation)
+
+
+## Darkened fill + orange diagonal hatch clipped to the province outline.
+func _draw_supply_overlay(canvas: CanvasItem, pid: String) -> void:
+	for loop: PackedVector2Array in geometry.outlines.get(pid, []):
+		if loop.size() < 3:
+			continue
+		canvas.draw_colored_polygon(loop, SUPPLY_SHADE)
+		var r := Rect2(loop[0], Vector2.ZERO)
+		for p in loop:
+			r = r.expand(p)
+		var span := r.size.x + r.size.y
+		var t := 0.0
+		while t <= span:
+			var a := Vector2(r.position.x + t, r.position.y)
+			var b := Vector2(r.position.x + t - r.size.y, r.end.y)
+			for seg: PackedVector2Array in Geometry2D.intersect_polyline_with_polygon(PackedVector2Array([a, b]), loop):
+				if seg.size() >= 2:
+					canvas.draw_polyline(seg, SUPPLY_HATCH, px(1.5), true)
+			t += SUPPLY_HATCH_STEP
+
+
 func _draw_fronts(canvas: CanvasItem) -> void:
+	for pid in out_of_supply_provinces():
+		_draw_supply_overlay(canvas, pid)
 	for key: String in front_borders():
 		for seg: PackedVector2Array in geometry.borders[key]:
 			canvas.draw_polyline(seg, FRONT_LINE, px(3.5), true)

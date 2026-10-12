@@ -37,7 +37,7 @@ func _ready() -> void:
 	EventBus.division_selected.connect(show_division)
 	EventBus.game_state_ready.connect(_on_game_state_ready)
 	for sig in ["province_changed", "nation_changed", "day_passed", "division_created", "division_destroyed",
-			"battle_started", "battle_ended", "province_captured"]:
+			"battle_started", "battle_ended", "province_captured", "supply_changed"]:
 		EventBus.connect(sig, _mark_dirty_any)
 	EventBus.division_moved.connect(func(_d: int, _a: String, _b: String) -> void: mark_dirty())
 	EventBus.division_order_changed.connect(func(_d: int) -> void: mark_dirty())
@@ -165,6 +165,16 @@ func _build_province(pid: String) -> void:
 
 	_build_battle(pid)
 
+	# Supply (step 11): is the province connected to its controller's capital?
+	var sp := get_node_or_null("/root/Supply")
+	if sp and ps:
+		var sgrid := _grid("SupplyGrid")
+		var ok: bool = sp.is_province_supplied(controller_id, pid)
+		_row(sgrid, "In supply", "yes" if ok else "no")
+		var v := sgrid.get_node("Value_In_supply") as Label
+		v.add_theme_color_override("font_color", UIStyle.GOOD if ok else UIStyle.BAD)
+		content.add_child(sgrid)
+
 	# Terrain
 	var terrain: Dictionary = GameData.terrain_of(pid)
 	content.add_child(UIStyle.section_header("Terrain"))
@@ -289,6 +299,11 @@ func _build_division(d: DivisionState) -> void:
 		_row(sgrid, "Support bonus", "+%d%% attack" % roundi(float(stats.support_attack_bonus) * 100.0))
 	if d.entrenchment > 0.0:
 		_row(sgrid, "Entrenchment", "%d%%" % roundi(d.entrenchment * 100.0))
+	var sp := get_node_or_null("/root/Supply")
+	if sp:
+		var ok: bool = sp.is_supplied(d)
+		_row(sgrid, "In supply", "yes" if ok else "no (-%d HP/day)" % roundi(float(sp.attrition_hp(d))))
+		(sgrid.get_node("Value_In_supply") as Label).add_theme_color_override("font_color", UIStyle.GOOD if ok else UIStyle.BAD)
 	content.add_child(sgrid)
 	content.add_child(_bar("HP", d.hp / maxf(1.0, float(stats.hp)), UIStyle.GOOD))
 	content.add_child(_bar("Organization", d.organization / maxf(1.0, float(stats.organization)), UIStyle.ACCENT))

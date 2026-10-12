@@ -131,3 +131,36 @@ func run_tests() -> void:
 	var hp1: float = ai2.hp
 	tm.advance_days(1)
 	check_eq(ai2.hp, hp1, "capitulated nation skipped")
+
+	# --- UI: map overlay, info panel rows ---
+	gs.new_game("germany")
+	var game = (load("res://scenes/game/game.tscn") as PackedScene).instantiate()
+	root.add_child(game)
+	await process_frame
+	var map = game.map_view
+	var info = game.hud.info_panel
+	check(map.out_of_supply_provinces().is_empty(), "no supply overlay at start")
+	map.select_province("berlin")
+	await process_frame
+	check_eq(info.value_text("In supply"), "yes", "province panel: Berlin in supply")
+	var unit = gs.add_division("infantry", "germany", "berlin")
+	bus.division_selected.emit(unit.id)
+	await process_frame
+	check_eq(info.value_text("In supply"), "yes", "division panel: in supply")
+	gs.province("moscow").controller = "germany"
+	bus.province_changed.emit("moscow")
+	await process_frame
+	await process_frame
+	check_eq(map.out_of_supply_provinces(), PackedStringArray(["moscow"]), "overlay lists cut-off Moscow")
+	var cut3 = gs.add_division("infantry", "germany", "moscow")
+	bus.division_selected.emit(cut3.id)
+	await process_frame
+	check(info.value_text("In supply").begins_with("no"), "division panel: out of supply")
+	map.select_province("moscow")
+	await process_frame
+	check_eq(info.value_text("In supply"), "no", "province panel: Moscow out of supply")
+	map.select_province("london")
+	await process_frame
+	check_eq(info.value_text("In supply"), "yes", "province panel uses the controller's supply (London)")
+	game.queue_free()
+	await process_frame
