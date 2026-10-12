@@ -1,15 +1,32 @@
 extends Node
 ## Root of the application. Owns the current "screen" (start menu, game,
 ## end screen ...) and swaps between them.
+##
+## Until the start screen exists (step 19) it boots straight into a new game.
+## Pick the nation from the command line:  godot --path . -- --nation=ussr
+
+const GAME_SCENE := "res://scenes/game/game.tscn"
 
 var current_screen: Node = null
 
 
 func _ready() -> void:
-	var label := Label.new()
-	label.text = "Epochs of War"
-	label.set_anchors_preset(Control.PRESET_CENTER)
-	change_screen(label)
+	if not GameState.active:
+		GameState.new_game(_nation_from_cmdline())
+	start_game_screen()
+
+
+func _nation_from_cmdline() -> String:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--nation="):
+			var nid := arg.trim_prefix("--nation=")
+			if GameData.playable_nations().has(nid):
+				return nid
+	return "germany"
+
+
+func start_game_screen() -> void:
+	change_screen((load(GAME_SCENE) as PackedScene).instantiate())
 
 
 ## Replace the current screen with [param screen].

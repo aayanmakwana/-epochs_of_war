@@ -27,6 +27,8 @@ signal speed_changed(speed_index: int, paused: bool)
 # --- Selection / map interaction -------------------------------------------
 signal province_selected(province_id: String)
 signal province_hovered(province_id: String)   # "" when nothing hovered
+## Right click on the map (used for move orders from step 9).
+signal province_right_clicked(province_id: String)
 signal selection_cleared
 signal division_selected(division_id: int)
 

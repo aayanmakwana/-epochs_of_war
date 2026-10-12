@@ -38,9 +38,18 @@ tools\godot\Godot_v4.7.2-stable_win64_console.exe --headless --path . --import
 # Play
 tools\godot\Godot_v4.7.2-stable_win64.exe --path .
 
+# Play as another nation (until the start screen exists): germany | ussr | uk
+tools\godot\Godot_v4.7.2-stable_win64.exe --path . -- --nation=ussr
+
 # Open in the editor
 tools\godot\Godot_v4.7.2-stable_win64.exe --path . --editor
 ```
+
+### Map controls
+
+- Left click: select a province (click empty sea/off-map to clear)
+- Mouse wheel: zoom towards the cursor
+- Left or middle drag, arrow keys or WASD: pan
 
 ## Tests
 
@@ -65,7 +74,7 @@ The build follows the 20-step Build Order in the design document.
 |---|---|---|
 | 1 | Project setup | done |
 | 2 | Data layer | done |
-| 3 | Strategic map rendering | pending |
+| 3 | Strategic map rendering | done |
 | 4 | UI shell | pending |
 | 5 | Time system | pending |
 | 6-20 | Production ... polish | pending |
