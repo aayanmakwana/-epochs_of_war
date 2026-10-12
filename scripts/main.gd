@@ -2,14 +2,15 @@ extends Node
 ## Root of the application. Owns the current "screen" (start menu, nation
 ## select, game, end screen) and swaps between them (step 19).
 ##
-## The main scene is now res://scenes/start_screen.tscn.
-## main.tscn still exists but is no longer the entry point.
+## Registered as an autoload ("Main"). Uses get_tree().change_scene_to_file()
+## so the scene tree root is always the active screen.
 
-const GAME_SCENE         := "res://scenes/game/game.tscn"
-const START_SCENE        := "res://scenes/start_screen.tscn"
+const GAME_SCENE          := "res://scenes/game/game.tscn"
+const START_SCENE         := "res://scenes/start_screen.tscn"
 const NATION_SELECT_SCENE := "res://scenes/nation_select.tscn"
-const END_SCENE          := "res://scenes/end_screen.tscn"
+const END_SCENE           := "res://scenes/end_screen.tscn"
 
+# Kept for compatibility; not used for scene management any more.
 var current_screen: Node = null
 
 
@@ -23,31 +24,31 @@ func _ready() -> void:
 # ---------------------------------------------------------------------------
 
 func show_start_screen() -> void:
-	change_screen((load(START_SCENE) as PackedScene).instantiate())
+	get_tree().change_scene_to_file(START_SCENE)
 
 
 func show_nation_select() -> void:
-	change_screen((load(NATION_SELECT_SCENE) as PackedScene).instantiate())
+	get_tree().change_scene_to_file(NATION_SELECT_SCENE)
 
 
 func start_game_screen() -> void:
-	change_screen((load(GAME_SCENE) as PackedScene).instantiate())
+	get_tree().change_scene_to_file(GAME_SCENE)
 
 
 func show_end_screen(result: String) -> void:
-	var screen: Node = (load(END_SCENE) as PackedScene).instantiate()
-	change_screen(screen)
-	# show_result needs the node to be in the tree first.
-	if screen.has_method("show_result"):
-		screen.show_result(result)
+	# Store result so the end screen can read it after the scene change.
+	_pending_result = result
+	get_tree().change_scene_to_file(END_SCENE)
 
 
-## Replace the current screen with [param screen].
-func change_screen(screen: Node) -> void:
-	if current_screen != null and is_instance_valid(current_screen):
-		current_screen.queue_free()
-	current_screen = screen
-	add_child(screen)
+var _pending_result: String = ""
+
+
+## Called by end_screen.gd in its _ready() to get the result string.
+func pop_result() -> String:
+	var r := _pending_result
+	_pending_result = ""
+	return r
 
 
 # ---------------------------------------------------------------------------
@@ -55,35 +56,25 @@ func change_screen(screen: Node) -> void:
 # ---------------------------------------------------------------------------
 
 func _on_province_captured(province_id: String, new_controller: String, old_controller: String) -> void:
-	# Only care about capital provinces.
 	if not GameData.is_capital(province_id):
 		return
-	# Check whether old_controller still owns any capital.
 	var has_capital := false
 	for nid in GameData.nation_ids:
 		var cap: String = GameData.nation(nid).get("capital", "")
-		if cap == "":
+		if cap == "" or nid != old_controller:
 			continue
-		# A nation's capital is "lost" when its province is no longer
-		# controlled by the original owner.
-		if nid == old_controller:
-			var ps: Object = GameState.province(cap)
-			if ps != null and ps.controller == old_controller:
-				has_capital = true
-				break
+		var ps: Object = GameState.province(cap)
+		if ps != null and ps.controller == old_controller:
+			has_capital = true
+			break
 	if has_capital:
-		return  # Still has at least one capital – no game over yet.
-	# old_controller has lost all capitals.
+		return
 	if not GameState.game_over:
 		var result: String = "defeat" if old_controller == GameState.player_nation else "victory"
 		GameState.game_over = true
 		TimeManager.pause()
 		EventBus.game_over.emit(result)
 
-
-# ---------------------------------------------------------------------------
-# game_over signal handler
-# ---------------------------------------------------------------------------
 
 func _on_game_over(result: String) -> void:
 	show_end_screen(result)

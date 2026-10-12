@@ -9,6 +9,11 @@ extends Control
 
 func _ready() -> void:
 	_btn_menu.pressed.connect(_on_main_menu)
+	# Result is passed via Main.pop_result() because change_scene_to_file
+	# replaces the tree before show_result() can be called externally.
+	var main: Node = get_node_or_null("/root/Main")
+	if main and main.has_method("pop_result"):
+		show_result(main.pop_result())
 
 
 ## Called by Main when the game ends.
