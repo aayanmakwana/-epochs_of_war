@@ -10,6 +10,7 @@ var side_panel: SidePanel
 var production_panel: ProductionPanel
 var research_panel: ResearchPanel
 var recruit_panel: RecruitPanel
+var diplomacy_panel: DiplomacyPanel
 var minimap: Minimap
 var map_view: MapView
 
@@ -30,6 +31,9 @@ func _ready() -> void:
 	side_panel.clear_tab("Research")
 	research_panel = ResearchPanel.new()
 	side_panel.tab_content("Research").add_child(research_panel)
+	side_panel.clear_tab("Diplomacy")
+	diplomacy_panel = DiplomacyPanel.new()
+	side_panel.tab_content("Diplomacy").add_child(diplomacy_panel)
 	minimap = Minimap.new()
 	add_child(minimap)
 	top_bar = TopBar.new()

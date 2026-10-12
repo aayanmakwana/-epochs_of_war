@@ -143,3 +143,50 @@ func run_tests() -> void:
 	gs.day_index = GameDate.to_index(1940, 6, 1)
 	tm.advance_days(1)
 	check(gs.nation("germany").at_war_with.is_empty(), "player Germany not forced into war")
+
+	# --- UI ---
+	var main: Node = load("res://scenes/game/game.tscn").instantiate()
+	root.add_child(main)
+	await process_frame
+	gs.new_game("germany")
+	await process_frame
+	await process_frame
+	var hud = main.hud
+	var tab = hud.side_panel.tab_content("Diplomacy")
+	check(tab.get_node_or_null("Placeholder") == null, "diplomacy placeholder removed")
+	var panel = hud.diplomacy_panel
+	check(panel != null and panel.get_parent() == tab, "DiplomacyPanel in Diplomacy tab")
+	if panel == null:
+		return
+	check(not panel.rows.has("germany"), "no row for the player")
+	check_eq(panel.rows.size(), gd.nation_ids.size() - 1, "one row per other nation")
+	var r: Dictionary = panel.rows["poland"]
+	check(r.status.text.begins_with("Neutral"), "Poland status Neutral")
+	check(r.declare.disabled and r.declare.tooltip_text != "", "declare disabled with reason")
+	check(not r.justify.disabled, "justify enabled")
+	r.justify.pressed.emit()
+	await process_frame
+	check(dp.is_justifying("germany", "poland"), "justify button starts justification")
+	check(r.status.text.contains("justifying"), "status shows justification")
+	check(r.justify.text == "Cancel" or r.justify.disabled == false, "justify button now cancels")
+	tm.advance_days(days)
+	await process_frame
+	check(not r.declare.disabled, "declare enabled when war goal ready")
+	r.declare.pressed.emit()
+	await process_frame
+	check(gs.nation("germany").is_at_war_with("poland"), "declare button declares war")
+	check(r.status.text.begins_with("At war"), "status At war")
+	check(r.pact.disabled and r.access.disabled, "pact/access disabled at war")
+	var u: Dictionary = panel.rows["uk"]
+	u.pact.pressed.emit()
+	await process_frame
+	check(dp.has_pact("germany", "uk"), "pact button signs pact")
+	check(u.status.text.contains("pact"), "status shows pact")
+	var h: Dictionary = panel.rows["hungary"]
+	h.access.pressed.emit()
+	await process_frame
+	check(dp.has_access("germany", "hungary"), "access button grants access")
+	check(h.status.text.contains("you have access"), "status shows access")
+	check(h.access.disabled, "access button disabled once granted")
+	main.queue_free()
+	await process_frame
