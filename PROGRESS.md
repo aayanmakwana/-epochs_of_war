@@ -12,7 +12,7 @@ Run all tests: `powershell -ExecutionPolicy Bypass -File tests\run_all.ps1`
 | 1 Project setup | done | `tests/test_step1_project.gd`: project settings (name, 1920x1080, windowed, main scene, config/features = engine version), folders, EventBus autoload, main scene instantiates |
 | 2 Data layer | done | `tests/test_step2_data.gd`: 20 provinces in doc order with all fields, 6 terrains, 5 major cities, 3 playable nations + capitals, map geometry (1 loop per province, symmetric adjacency, anchors inside, connected graph, expected/forbidden adjacencies, determinism), 3 templates, 3 equipment, 15 techs (5/branch, 30-90 days, prerequisite chain), tech effects, calendar, GameState new game, JSON save-dict round trip |
 | 3 Strategic map rendering | done | `tests/test_step3_map.gd`: game scene loads, 20 province Polygon2D fills + labels, all 7 layers exist, fills use nation colour (German != Soviet, naval blue), border/coastline segments exist, recolour on `province_changed` after controller change, clicking every anchor selects that province and emits `province_selected`, off-map click clears and emits `selection_cleared`, no holes between polygons, zoom clamped min/max, pan moves + clamped to bounds, `focus_on`, zoom-towards-cursor keeps world point fixed, `build()` rebuild leaves no stale layers |
-| 4 UI shell | pending | |
+| 4 UI shell | done | `tests/test_step4_ui.gd`: HUD under UI, root ignores mouse, panels block it; top bar position/height, date, nation, flag, manpower/oil/steel/factories values + refresh on `nation_changed`/`province_changed`/`day_passed`, 4 speed buttons mirror `speed_changed`; info panel opens on select, province fields (terrain, factories, resources, owner, garrison), garrison button -> division view (stats, orders), back button, naval zone has no buildings, occupied note + rebuild on change, close button clears map selection, off-map click hides, destroyed division falls back; 3 tabs with placeholders, `select_tab`, `clear_tab`, collapse/expand, layout; minimap bottom-right below side panel, transform round trip, whole map fits, click focuses camera, viewport rect follows zoom; injected click on minimap does not select, click on map area does; drag released over a panel ends the drag (no stuck panning); new game refreshes HUD |
 | 5 Time system | pending | |
 | 6-20 | pending | |
 
@@ -27,9 +27,10 @@ scenes/main.tscn         root; scripts/main.gd swaps "screens" (change_screen). 
                          (nation from `-- --nation=germany|ussr|uk`, default germany)
 scenes/game/game.tscn    in-game screen: Game (scripts/game/game.gd)
                            World (Node2D) -> MapView (scripts/map/map_view.gd), MapCamera (scripts/map/map_camera.gd)
-                           UI (CanvasLayer) -> empty; step 4 puts top bar / panels / minimap here
+                           UI (CanvasLayer) -> HUD (scripts/ui/hud.gd), see "HUD (step 4)"
 scripts/map/             MapView (renders map, selection), MapCamera (zoom/pan), DrawLayer (Node2D delegating _draw)
-scripts/game/            game.gd (wires camera to map, focuses near the player's capital)
+scripts/game/            game.gd (wires camera to map, hud.setup(map_view, camera), focuses near the player's capital)
+scripts/ui/              Hud, TopBar, InfoPanel, SidePanel, Minimap, FlagView (flag.gd), UIStyle (theme/colours/format)
 scripts/autoload/        EventBus, GameData, GameState (+ TimeManager, Simulation from step 5)
 scripts/core/            pure helpers: map_geometry.gd (MapGeometry), game_date.gd (GameDate), tech_effects.gd (TechEffects)
 scripts/state/           ProvinceState, NationState, DivisionState (runtime records with to_dict/from_dict)
@@ -66,6 +67,40 @@ tests/                   test_base.gd harness, test_stepN_*.gd, run_all.ps1, log
 - `MapCamera` (Camera2D): wheel zoom towards cursor (0.45-3.0), left/middle drag or arrows/WASD to pan, clamped to
   map bounds +100. API: `setup(bounds)`, `zoom_level()`, `set_zoom_level(z, screen_anchor=null)`, `pan_by(world_delta)`,
   `focus_on(world_pos)`, `visible_world_rect()` (for the minimap viewport box), `was_drag()`; signal `view_changed`.
+
+### HUD (step 4)
+- `Hud` (Control, full rect, `MOUSE_FILTER_IGNORE`) is `$UI/HUD` in game.tscn (`game.hud`). It builds its children in code
+  and sets `theme = UIStyle.make_theme()`. Fields: `top_bar`, `info_panel`, `side_panel`, `minimap`, `map_view`.
+  Every panel uses `MOUSE_FILTER_STOP`, so clicks/wheel over panels never reach the map's `_unhandled_input`.
+- Layout constants are in `UIStyle` (TOP_BAR_HEIGHT 56, MARGIN 8, LEFT_PANEL_WIDTH 360, RIGHT_PANEL_WIDTH 430,
+  MINIMAP_WIDTH 340). Helpers: `UIStyle.label(text, size, color)`, `section_header`, `panel_box`, `flat_box`,
+  `fmt_int` (1,234), `fmt_compact` (900.0K / 2.50M). UIStyle and FlagView don't use autoloads.
+- `TopBar`: flag + nation name, `date_label` (GameState.date_string()), `time_label` (hour), `pause_button`,
+  `speed_buttons` (one per `rules.speeds`, 4), `resource_labels` / `resource_text(id)` for manpower, oil, steel, factories.
+  Refreshes on `game_state_ready`, `day_passed`, `hour_passed` (date only), `nation_changed` (player), `province_changed`.
+  **Step 5 contract:** the buttons call `/root/TimeManager` `toggle_pause()` and `set_speed(index)` if the autoload has them,
+  and the bar mirrors `EventBus.speed_changed(speed_index, paused)`. The TimeManager should emit `speed_changed` after every
+  change (and once at start). Without a TimeManager the buttons only change local state (starts paused, speed 0).
+  Keyboard shortcuts (Space etc.) are not wired yet.
+- `InfoPanel` (left): opens on `province_selected` / `division_selected`, closes on `selection_cleared` and `game_state_ready`.
+  `mode` "" | "province" | "division", `current_province`, `current_division`, `content` (VBox, rebuilt).
+  Province view: title/subtitle (capital / major city / naval zone), owner flag + name, "Occupied by", terrain grid,
+  resources per day, buildings (factories + queued, infrastructure, not shown for naval zones), garrison buttons
+  (`Division_<id>`, pressing one emits `division_selected`). Division view: stats from `TechEffects.division_stats`, HP / org
+  bars, orders (path), `BackToProvince` button. `X` closes and emits `selection_cleared` (MapView drops the highlight).
+  Rebuilds at most once per frame (`mark_dirty()`) on province/nation changes, day_passed, division created/moved/destroyed,
+  battles and captures. `value_text(key)` reads a value row (tests). Signal `content_built(mode)` lets later steps
+  add sections (e.g. step 9 move hints, step 12 hide enemy garrisons under fog).
+- `SidePanel` (right, tabs "Production", "Research", "Diplomacy"): `tab_content(name)` -> VBoxContainer inside a
+  ScrollContainer, holding a `Placeholder` label until `clear_tab(name)` is called. `select_tab(name)`, `current_tab_name()`,
+  `set_collapsed(bool)`, signal `tab_changed(name)`. **Steps 6 / 7 / 13: `clear_tab` then fill your tab.**
+- `Minimap` (bottom right): `canvas` draws the province polygons in `map_view.province_color` plus the camera's
+  `visible_world_rect()`. Redraws on `view_changed`, `province_changed`, `game_state_ready`. Left click/drag ->
+  `camera.focus_on`. `map_transform()`, `to_world(local)`, `to_local_point(world)`, `viewport_rect_local()`, `focus_local()`.
+  It does not draw units or fog yet. If step 12 hides provinces, redraw the canvas from there.
+- Step 4 changes to step 3 code: `MapView._unhandled_input` turns the event's own position into world space
+  (`_event_world_pos`) instead of `get_global_mouse_position()`, so injected events (`root.push_input`) work in headless
+  tests. `MapCamera._input` ends a drag on button release even when a HUD panel consumes the release.
 
 ### Autoloads (order matters: later ones may use earlier ones)
 1. **EventBus** (`scripts/autoload/event_bus.gd`): signals only. All signals for later steps are already declared:
@@ -131,4 +166,6 @@ All have `to_dict()` / `static from_dict()`; add new fields to both when extendi
 - No functional bugs known.
 - Git prints "CRLF will be replaced by LF" warnings on commit (.gitattributes normalises line endings); harmless.
 - The Fronts / Units / Fog map layers are intentionally empty until steps 10 / 8 / 12.
-- The game screen has no HUD yet (step 4); the UI CanvasLayer in game.tscn is empty.
+- The right panel's three tabs are placeholders until steps 6 / 7 / 13. The speed buttons do nothing until the step 5 TimeManager exists.
+- Tests that simulate clicks should use `root.push_input` with the event `position` set. Headless doesn't move the OS cursor,
+  so `get_global_mouse_position()` is stale there.

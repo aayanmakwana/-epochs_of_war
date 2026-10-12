@@ -75,7 +75,7 @@ The build follows the 20-step Build Order in the design document.
 | 1 | Project setup | done |
 | 2 | Data layer | done |
 | 3 | Strategic map rendering | done |
-| 4 | UI shell | pending |
+| 4 | UI shell (top bar, info panel, tabbed side panel, minimap) | done |
 | 5 | Time system | pending |
 | 6-20 | Production ... polish | pending |
 
