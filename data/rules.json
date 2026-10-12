@@ -14,6 +14,8 @@
 	"default_production_split": { "infantry_equipment": 0.5, "armor": 0.25, "artillery": 0.25 },
 	"research_speed": 1.0,
 	"autosave_interval_days": 30,
+	"movement_base_days": 16.0,
+	"infrastructure_move_bonus": 0.1,
 	"attrition_per_day": 0.02,
 	"major_city_count": 5
 }

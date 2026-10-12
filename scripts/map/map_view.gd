@@ -27,6 +27,10 @@ var geometry: MapGeometry
 var camera: MapCamera
 var selected_province: String = ""
 var hovered_province: String = ""
+## Step 9: player divisions selected for move orders (ids).
+var selected_divisions: Array[int] = []
+const ORDER_LINE := Color(1, 0.92, 0.35, 0.95)
+const PREVIEW_LINE := Color(1, 1, 1, 0.55)
 
 ## pid -> Array[Polygon2D]
 var fill_nodes: Dictionary = {}
@@ -44,6 +48,14 @@ func _ready() -> void:
 	EventBus.division_destroyed.connect(_on_divisions_changed)
 	EventBus.division_moved.connect(_on_divisions_changed)
 	EventBus.province_changed.connect(_on_divisions_changed)
+	EventBus.division_order_changed.connect(_on_divisions_changed)
+	EventBus.day_passed.connect(_on_day_for_units)
+	EventBus.division_selected.connect(_on_division_selected)
+	EventBus.division_destroyed.connect(_on_division_destroyed)
+	EventBus.divisions_selected.connect(func(ids: Array) -> void:
+		if ids.is_empty():
+			clear_unit_selection())
+	EventBus.game_state_ready.connect(func() -> void: selected_divisions.clear())
 
 
 ## (Re)create all child nodes from the geometry.
@@ -163,8 +175,25 @@ func province_at(world_pos: Vector2) -> String:
 
 
 ## Select the province under [param world_pos]. Returns the province id ("" = none).
+## Step 9: with player divisions selected, clicking another province orders
+## them to move there (the click does not change the province selection).
+## Clicking a player unit icon selects the province and its player divisions.
 func click_at(world_pos: Vector2) -> String:
 	var pid := province_at(world_pos)
+	var icon := unit_icon_at(world_pos)
+	if not icon.is_empty() and String(icon.owner) == GameState.player_nation:
+		var ip: String = icon.province
+		select_province(ip)
+		var ids: Array[int] = []
+		for d: DivisionState in GameState.divisions_in(ip):
+			if d.owner == GameState.player_nation:
+				ids.append(d.id)
+		ids.sort()
+		select_divisions(ids)
+		return ip
+	if pid != "" and not selected_divisions.is_empty() and not _units_in(pid):
+		order_selected_move(pid)
+		return pid
 	if pid == "":
 		clear_selection()
 	else:
@@ -173,12 +202,14 @@ func click_at(world_pos: Vector2) -> String:
 
 
 func select_province(pid: String) -> void:
+	clear_unit_selection()
 	selected_province = pid
 	refresh_layer("Highlight")
 	EventBus.province_selected.emit(pid)
 
 
 func clear_selection() -> void:
+	clear_unit_selection()
 	if selected_province == "":
 		return
 	selected_province = ""
@@ -187,9 +218,80 @@ func clear_selection() -> void:
 
 
 func _on_selection_cleared() -> void:
+	clear_unit_selection()
 	if selected_province != "":
 		selected_province = ""
 		refresh_layer("Highlight")
+
+
+# --- Unit selection / move orders (step 9) -----------------------------------
+
+## Select player divisions for move orders; emits divisions_selected(ids).
+func select_divisions(ids: Array) -> void:
+	selected_divisions.clear()
+	for did in ids:
+		var d: DivisionState = GameState.division(int(did))
+		if d and d.owner == GameState.player_nation:
+			selected_divisions.append(d.id)
+	refresh_layer("Units")
+	EventBus.divisions_selected.emit(selected_divisions.duplicate())
+
+
+func clear_unit_selection() -> void:
+	if selected_divisions.is_empty():
+		return
+	selected_divisions.clear()
+	refresh_layer("Units")
+
+
+func _on_division_selected(did: int) -> void:
+	var d: DivisionState = GameState.division(did)
+	selected_divisions.clear()
+	if d and d.owner == GameState.player_nation:
+		selected_divisions.append(did)
+	refresh_layer("Units")
+
+
+func _on_division_destroyed(did: int) -> void:
+	selected_divisions.erase(did)
+
+
+## True if every selected division is already in [param pid].
+func _units_in(pid: String) -> bool:
+	for did in selected_divisions:
+		var d: DivisionState = GameState.division(did)
+		if d and d.province != pid:
+			return false
+	return true
+
+
+## Order the selected divisions to [param pid]. Returns the number that moved.
+func order_selected_move(pid: String) -> int:
+	var mv := get_node_or_null("/root/Movement")
+	if mv == null or selected_divisions.is_empty():
+		return 0
+	var moved := 0
+	var reason := ""
+	for did in selected_divisions:
+		var d: DivisionState = GameState.division(did)
+		if d == null or d.province == pid:
+			continue
+		if mv.order_move(did, pid):
+			moved += 1
+		elif reason == "":
+			reason = mv.move_error(did, pid)
+	if moved == 0 and reason != "":
+		EventBus.notify.emit(reason)
+	refresh_layer("Units")
+	return moved
+
+
+## The unit icon under [param world_pos] ({} if none).
+func unit_icon_at(world_pos: Vector2) -> Dictionary:
+	for icon: Dictionary in unit_icons():
+		if (icon.rect as Rect2).grow(2.0).has_point(world_pos):
+			return icon
+	return {}
 
 
 func set_hovered(pid: String) -> void:
@@ -197,6 +299,8 @@ func set_hovered(pid: String) -> void:
 		return
 	hovered_province = pid
 	refresh_layer("Highlight")
+	if not selected_divisions.is_empty():
+		refresh_layer("Units")   # move preview follows the cursor
 	EventBus.province_hovered.emit(pid)
 
 
@@ -215,9 +319,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
 			var pid := province_at(_event_world_pos(mb.position))
 			if pid != "":
+				if not selected_divisions.is_empty():
+					order_selected_move(pid)
 				EventBus.province_right_clicked.emit(pid)
 	elif event is InputEventMouseMotion:
 		set_hovered(province_at(_event_world_pos((event as InputEventMouseMotion).position)))
+	elif event is InputEventKey and event.pressed and (event as InputEventKey).keycode == KEY_ESCAPE:
+		if not selected_divisions.is_empty():
+			clear_unit_selection()
+			EventBus.divisions_selected.emit([])
+			get_viewport().set_input_as_handled()
 
 
 func _on_province_changed(pid: String) -> void:
@@ -324,11 +435,72 @@ func unit_icons() -> Array:
 	return out
 
 
+## Step 9: movement arrows of the player's moving divisions. Returns Array of
+## {division, points (PackedVector2Array: unit position then province anchors),
+## progress, selected}. Hidden enemy orders are not drawn.
+func move_arrows() -> Array:
+	var out: Array = []
+	if not GameState.active:
+		return out
+	var ids: Array = GameState.divisions.keys()
+	ids.sort()
+	for did in ids:
+		var d: DivisionState = GameState.divisions[did]
+		if not d.is_moving() or d.owner != GameState.player_nation:
+			continue
+		var pts := PackedVector2Array([unit_anchor(d.province)])
+		for p in d.path:
+			pts.append(unit_anchor(p))
+		out.append({"division": d.id, "points": pts, "progress": d.move_progress,
+			"selected": selected_divisions.has(d.id)})
+	return out
+
+
+func unit_anchor(pid: String) -> Vector2:
+	return geometry.anchors.get(pid, Vector2.ZERO) + Vector2(0, 35)
+
+
+func _draw_arrow(canvas: CanvasItem, pts: PackedVector2Array, col: Color, width: float) -> void:
+	if pts.size() < 2:
+		return
+	canvas.draw_polyline(pts, Color(0, 0, 0, col.a * 0.7), width + px(2.0), true)
+	canvas.draw_polyline(pts, col, width, true)
+	var tip: Vector2 = pts[-1]
+	var dir: Vector2 = (tip - pts[-2]).normalized()
+	var head := px(14.0)
+	var side := dir.orthogonal() * head * 0.5
+	canvas.draw_colored_polygon(PackedVector2Array([tip, tip - dir * head + side, tip - dir * head - side]), col)
+
+
 func _draw_units(canvas: CanvasItem) -> void:
 	var font := ThemeDB.fallback_font
+	# Movement orders (below the counters).
+	for arrow: Dictionary in move_arrows():
+		var pts: PackedVector2Array = arrow.points
+		var col := ORDER_LINE if arrow.selected else ORDER_LINE.darkened(0.25)
+		_draw_arrow(canvas, pts, col, px(3.0 if arrow.selected else 2.0))
+		var marker: Vector2 = pts[0].lerp(pts[1], float(arrow.progress))
+		canvas.draw_circle(marker, px(6.0), Color(0, 0, 0, 0.9))
+		canvas.draw_circle(marker, px(4.5), ORDER_LINE)
+	# Preview of a move to the hovered province.
+	var mv := get_node_or_null("/root/Movement")
+	if mv and not selected_divisions.is_empty() and hovered_province != "":
+		var d: DivisionState = GameState.division(selected_divisions[0])
+		if d and d.province != hovered_province:
+			var path: Array = mv.find_path(d.owner, d.province, hovered_province)
+			if not path.is_empty():
+				var pts := PackedVector2Array([unit_anchor(d.province)])
+				for p in path:
+					pts.append(unit_anchor(p))
+				_draw_arrow(canvas, pts, PREVIEW_LINE, px(2.0))
+	var sel_prov := ""
+	if not selected_divisions.is_empty() and GameState.division(selected_divisions[0]):
+		sel_prov = GameState.division(selected_divisions[0]).province
 	for icon: Dictionary in unit_icons():
 		var r: Rect2 = icon.rect
 		var col := GameData.nation_color(icon.owner)
+		if icon.province == sel_prov and icon.owner == GameState.player_nation:
+			canvas.draw_rect(r.grow(4.0), SELECT_LINE)
 		canvas.draw_rect(r.grow(1.5), Color(0, 0, 0, 0.85))
 		canvas.draw_rect(r, col.darkened(0.15))
 		var txt := "%d %s" % [int(icon.count), String(icon.letters)]
@@ -339,6 +511,13 @@ func _draw_units(canvas: CanvasItem) -> void:
 
 func _on_divisions_changed(_a: Variant = null, _b: Variant = null, _c: Variant = null) -> void:
 	refresh_layer("Units")
+
+
+func _on_day_for_units(_day: int) -> void:
+	for d: DivisionState in GameState.divisions.values():
+		if d.is_moving() and d.owner == GameState.player_nation:
+			refresh_layer("Units")   # progress markers
+			return
 
 
 func _draw_fog(_canvas: CanvasItem) -> void:

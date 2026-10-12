@@ -40,6 +40,8 @@ func _ready() -> void:
 			"battle_started", "battle_ended", "province_captured"]:
 		EventBus.connect(sig, _mark_dirty_any)
 	EventBus.division_moved.connect(func(_d: int, _a: String, _b: String) -> void: mark_dirty())
+	EventBus.division_order_changed.connect(func(_d: int) -> void: mark_dirty())
+	EventBus.divisions_selected.connect(_on_divisions_selected)
 
 
 func show_province(pid: String) -> void:
@@ -58,9 +60,25 @@ func show_division(did: int) -> void:
 	if d == null:
 		return
 	mode = "division"
+	group_size = 1
 	current_division = did
 	current_province = d.province
 	visible = true
+	rebuild()
+
+
+## Step 9: number of divisions selected together on the map (group move).
+var group_size: int = 1
+
+
+func _on_divisions_selected(ids: Array) -> void:
+	if ids.is_empty():
+		group_size = 1
+		if mode == "division":
+			mark_dirty()
+		return
+	show_division(int(ids[0]))
+	group_size = ids.size()
 	rebuild()
 
 
@@ -269,13 +287,39 @@ func _build_division(d: DivisionState) -> void:
 	orders_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	orders_label.custom_minimum_size.x = UIStyle.LEFT_PANEL_WIDTH - 30
 	content.add_child(orders_label)
+	var mv := get_node_or_null("/root/Movement")
+	if d.is_moving() and mv:
+		var eta := ceili(float(mv.eta_days(d)) - 0.0001)
+		var eta_label := UIStyle.label("Arrives in %d day%s" % [eta, "" if eta == 1 else "s"], 14, UIStyle.TEXT_DIM)
+		eta_label.name = "Eta"
+		content.add_child(eta_label)
+		content.add_child(_bar("Move", d.move_progress, UIStyle.ACCENT))
+	if d.owner == GameState.player_nation:
+		var hint_text := "Click or right-click a province on the map to move."
+		if group_size > 1:
+			hint_text = "%d divisions selected. " % group_size + hint_text
+		var hint := UIStyle.label(hint_text, 13, UIStyle.ACCENT)
+		hint.name = "MoveHint"
+		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		hint.custom_minimum_size.x = UIStyle.LEFT_PANEL_WIDTH - 30
+		content.add_child(hint)
+		if d.is_moving() and mv:
+			var stop_btn := Button.new()
+			stop_btn.name = "StopButton"
+			stop_btn.text = "Stop (hold in %s)" % GameData.province_name(d.province)
+			stop_btn.focus_mode = Control.FOCUS_NONE
+			var did := d.id
+			stop_btn.pressed.connect(func() -> void: mv.stop(did))
+			content.add_child(stop_btn)
 
 	var back := Button.new()
 	back.name = "BackToProvince"
 	back.text = "< " + GameData.province_name(d.province)
 	back.focus_mode = Control.FOCUS_NONE
 	var pid := d.province
-	back.pressed.connect(func() -> void: show_province(pid))
+	back.pressed.connect(func() -> void:
+		EventBus.divisions_selected.emit([])
+		show_province(pid))
 	content.add_child(back)
 
 

@@ -45,6 +45,10 @@ signal research_completed(nation_id: String, tech_id: String)
 
 # --- Military (steps 8-11) ------------------------------------------------
 signal division_created(division_id: int)
+## A division's move order was given, changed, finished or cancelled (step 9).
+signal division_order_changed(division_id: int)
+## Several divisions selected at once on the map (step 9). Empty = unit selection cleared.
+signal divisions_selected(division_ids: Array)
 signal division_moved(division_id: int, from_province: String, to_province: String)
 signal division_destroyed(division_id: int)
 signal battle_started(province_id: String)
