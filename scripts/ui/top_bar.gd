@@ -45,6 +45,12 @@ func _ready() -> void:
 	EventBus.nation_changed.connect(_on_nation_changed)
 	EventBus.province_changed.connect(func(_p: String) -> void: refresh_resources())
 	EventBus.speed_changed.connect(_on_speed_changed)
+	# The TimeManager may have emitted speed_changed before this bar existed.
+	var tm := _time_manager()
+	if tm and "speed_index" in tm and "paused" in tm:
+		speed_index = tm.speed_index
+		paused = tm.paused
+		_update_speed_buttons()
 	refresh()
 
 
