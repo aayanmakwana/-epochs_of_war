@@ -17,7 +17,8 @@ Run all tests: `powershell -ExecutionPolicy Bypass -File tests\run_all.ps1`
 | 6 Production system | done | `tests/test_step6_production.gd`: Production autoload + registered daily system; default factory split (17 German factories -> 9/4/4); allocation API clamping (no free factories, 0..assigned+free, unknown equipment); exact one-day numbers (output, steel income/use, manpower +800, `nation_changed`); fractional progress carry-over; oil shortage stalls armor (flag, progress capped at one unit, resumes); production_mult tech; factory build: cost 50 steel, refusals (foreign, naval, occupied, no steel with reason, province cap), completion after `factory_build_days` with `factory_completed`, occupied construction paused; allocation clamped after losing a province; save round trip keeps allocation + queue; capitulated nations skipped; Production tab UI (rows, -/+ buttons, output/stockpile labels, steel balance, build buttons only for owned provinces, build spends steel, construction list, disabled build + tooltip, refresh after a day) |
 | 7 Research system | done | `tests/test_step7_research.gd`: Research autoload + daily system after production; statuses (researched/available/locked) and refusal reasons (prerequisite, done, unknown, already researching, capitulated); available techs + branch progress; exact 30-day completion with `research_started`/`research_completed`/player `notify`, nothing one day early; light tanks unlocks armor; medium tanks armor attack +15%; switching keeps partial progress in `research_saved`, stop keeps progress, no progress while idle, resume; save round trip (current, progress, saved partials, researched); AI/minor nations research in parallel, capitulated skipped, no notify for AI; total war production +15%; Research tab UI (3-column grid, branch headers, tier layout, 15 buttons, Done/locked tooltips, click starts research, current tech label + progress bar + days left, per-button bar, template stats refresh, stop button) |
 | 8 Military recruitment | done | `tests/test_step8_recruitment.gd`: Recruitment autoload + daily system after research; refusals (armor without light tanks, naval zone, foreign/occupied province, unknown template, manpower/equipment shortage with reason, refused recruit changes nothing); default deploy = capital, deploy list = owned+controlled land provinces; exact costs paid up front (manpower, equipment); cancel refunds; nothing one day early, division created on day 30 in the chosen province with `division_created` + player notify; lost deploy province falls back to the capital; queue save round trip; AI/minor nations train too; UI (panel in Production tab, 3 buttons with cost text, default capital, map selection of an owned province sets deploy, foreign ignored, dropdown, button recruits into chosen province, queue row cancel, disabled + reason tooltip); map unit icons (per province/owner box, count, type letters, follows new divisions) |
-| 9-20 | pending | |
+| 9 Division movement | done | `tests/test_step9_movement.gd`: Movement autoload + daily system after recruitment; BFS paths (adjacent, 2-hop, none into neutral/foreign/UK sea/own province, UK may enter its sea), refusal reasons (naval, not friendly, already there), refused order changes nothing; military access opens land provinces (multi-hop through access), adjacent at-war enemy province is a valid final target but not passable; travel days (infantry 4 speed, forest 6 d, urban infra 5 4 d, armor faster, artillery slower); order -> path + `division_order_changed`, ETA, 75% after 3 of 4 days, arrival on the exact day with origin + `division_moved(id, from, to)`, progress reset; save/load mid-move keeps path + progress, nothing one day early; stop; target lost -> halt + player notify; intermediate lost -> reroute to same destination; capitulated frozen; UI: garrison button selects division for orders + move hint, click on foreign province refused with notify (selection kept), click on valid province orders without changing province selection, Stop button / ETA / orders text, movement arrow points/selected/progress, right-click orders, Escape clears unit selection, unit icon click selects all player divisions there (info panel group size) + group order, province selection clears unit selection, foreign divisions not selectable for orders |
+| 10-20 | pending | |
 
 ## Architecture
 
@@ -193,6 +194,38 @@ tests/                   test_base.gd harness, test_stepN_*.gd, run_all.ps1, log
   **Step 9**: divisions in transit still draw in `d.province`; hit-test `rect` from `unit_icons()` for clicking units.
   **Step 12**: filter hidden provinces in `unit_icons()`/`_draw_units`.
 
+### Movement (step 9)
+- **Movement** autoload (`scripts/autoload/movement.gd`, after Recruitment) registers
+  `Simulation.register_daily("movement", run_daily, 40)` (**daily**, not hourly). Each day every moving division of a
+  non-capitulated nation (id order) adds `1 / hop_days(d, path[0])` to `move_progress`; at 1.0 it enters `path[0]`:
+  `origin = from`, `province = next`, progress 0, entrenchment 0, `division_moved(id, from, to)`; when the path empties
+  `division_order_changed(id)` fires too.
+- `hop_days = rules.movement_base_days (16) / speed x terrain move_cost x (1 - rules.infrastructure_move_bonus (0.1) x (infra - 3))`,
+  speed from `TechEffects.division_stats` (techs apply). Infantry: plains/infra 3 = 4 days, forest 6, mountain 8.
+- Passable (`is_passable(nid, pid)`): controller == nid, or land province whose controller is in `NationState.military_access`.
+  Naval zones only if the nation controls them. `is_hostile(nid, pid)`: land province controlled by a nation at war with nid.
+  `find_path(nid, from, to)` = BFS (fewest provinces) through passable provinces; the **final** target may be hostile
+  (must be adjacent to the last friendly step). Returns `Array[String]` without `from` (empty = no route).
+- API: `order_move(div_id, target)` (bool; keeps progress if the next hop is unchanged; emits `division_order_changed`),
+  `order_move_group(ids, target)` (count), `move_error(div_id, target)` ("" = ok, else reason), `can_move`, `stop(div_id)`,
+  `hop_days(d, pid)`, `eta_days(d)`, `division_speed(d)`.
+- If the next province becomes impassable the path is recomputed to the same destination; with no route the division
+  halts (notify "Division #N halted ..." for the player).
+- **Step 10 hook:** `Movement.hostile_entry: Callable` - if valid it is called `(division, province) -> bool` when a division
+  reaches full progress towards a hostile province; return false to hold it at progress 1.0 (battle running), true to let
+  it enter. Without the hook (step 9) divisions simply enter. Combat should start there (or on `division_order_changed`).
+- New EventBus signals: `division_order_changed(division_id)`, `divisions_selected(division_ids: Array)` (empty = clear).
+- Map (`MapView`): `selected_divisions: Array[int]` (player's only). Set by `division_selected` (garrison button; foreign ->
+  cleared), `select_divisions(ids)` (emits `divisions_selected`), or clicking a player unit icon (`unit_icon_at(world_pos)`;
+  selects the province AND all player divisions in it). With divisions selected, `click_at` on another province or a
+  right-click calls `order_selected_move(pid)` (refusal reason -> `notify`, selection kept) and does not change the province
+  selection. `select_province`, `clear_selection`, `selection_cleared`, `divisions_selected([])`, Escape clear it.
+  `move_arrows()` -> `{division, points, progress, selected}` for the player's moving divisions; `_draw_units` draws arrows
+  (yellow, progress dot on the first leg), a white preview path to the hovered province, and a yellow frame around the
+  selected icon. `unit_anchor(pid)` = icon centre.
+- InfoPanel division view: `Eta` label ("Arrives in N days"), `Bar_Move`, `MoveHint` (player divisions, with group size
+  `group_size`), `StopButton` while moving; back button emits `divisions_selected([])`. Rebuilds on `division_order_changed`.
+
 ### Autoloads (order matters: later ones may use earlier ones)
 1. **EventBus** (`scripts/autoload/event_bus.gd`): signals only. All signals for later steps are already declared:
    `game_state_ready`, `game_over(result)`, `hour_passed(hour)`, `day_passed(day_index)`, `month_passed(year, month)`,
@@ -257,7 +290,10 @@ All have `to_dict()` / `static from_dict()`; add new fields to both when extendi
 - No functional bugs known.
 - Git prints "CRLF will be replaced by LF" warnings on commit (.gitattributes normalises line endings); harmless.
 - The Fronts / Fog map layers are intentionally empty until steps 10 / 12 (Units drawn since step 8).
-- Unit icons are not clickable yet (division selection is via the info panel's garrison buttons); step 9 adds clicking.
+- Movement is daily (as specified for step 9), so divisions jump province to province at day boundaries; the arrow's
+  progress dot shows partial progress. Enemy/AI move orders are not drawn.
+- Headless test windows are smaller than the 1920x1080 viewport, so tests call `MapView._unhandled_input(ev)` directly
+  for clicks near the screen edge instead of `root.push_input`.
 - The Diplomacy tab is a placeholder until step 13 (Production filled in step 6, Research in step 7). AI nations do not pick research until step 14. Speed buttons and the clock work since step 5.
 - Production balance numbers (equipment costs, default split) are first-pass; step 20 balance pass may tune them.
 - Minor nations run the same economy with their default split (no AI changes until step 14).
