@@ -18,7 +18,8 @@ Run all tests: `powershell -ExecutionPolicy Bypass -File tests\run_all.ps1`
 | 7 Research system | done | `tests/test_step7_research.gd`: Research autoload + daily system after production; statuses (researched/available/locked) and refusal reasons (prerequisite, done, unknown, already researching, capitulated); available techs + branch progress; exact 30-day completion with `research_started`/`research_completed`/player `notify`, nothing one day early; light tanks unlocks armor; medium tanks armor attack +15%; switching keeps partial progress in `research_saved`, stop keeps progress, no progress while idle, resume; save round trip (current, progress, saved partials, researched); AI/minor nations research in parallel, capitulated skipped, no notify for AI; total war production +15%; Research tab UI (3-column grid, branch headers, tier layout, 15 buttons, Done/locked tooltips, click starts research, current tech label + progress bar + days left, per-button bar, template stats refresh, stop button) |
 | 8 Military recruitment | done | `tests/test_step8_recruitment.gd`: Recruitment autoload + daily system after research; refusals (armor without light tanks, naval zone, foreign/occupied province, unknown template, manpower/equipment shortage with reason, refused recruit changes nothing); default deploy = capital, deploy list = owned+controlled land provinces; exact costs paid up front (manpower, equipment); cancel refunds; nothing one day early, division created on day 30 in the chosen province with `division_created` + player notify; lost deploy province falls back to the capital; queue save round trip; AI/minor nations train too; UI (panel in Production tab, 3 buttons with cost text, default capital, map selection of an owned province sets deploy, foreign ignored, dropdown, button recruits into chosen province, queue row cancel, disabled + reason tooltip); map unit icons (per province/owner box, count, type letters, follows new divisions) |
 | 9 Division movement | done | `tests/test_step9_movement.gd`: Movement autoload + daily system after recruitment; BFS paths (adjacent, 2-hop, none into neutral/foreign/UK sea/own province, UK may enter its sea), refusal reasons (naval, not friendly, already there), refused order changes nothing; military access opens land provinces (multi-hop through access), adjacent at-war enemy province is a valid final target but not passable; travel days (infantry 4 speed, forest 6 d, urban infra 5 4 d, armor faster, artillery slower); order -> path + `division_order_changed`, ETA, 75% after 3 of 4 days, arrival on the exact day with origin + `division_moved(id, from, to)`, progress reset; save/load mid-move keeps path + progress, nothing one day early; stop; target lost -> halt + player notify; intermediate lost -> reroute to same destination; capitulated frozen; UI: garrison button selects division for orders + move hint, click on foreign province refused with notify (selection kept), click on valid province orders without changing province selection, Stop button / ETA / orders text, movement arrow points/selected/progress, right-click orders, Escape clears unit selection, unit icon click selects all player divisions there (info panel group size) + group order, province selection clears unit selection, foreign divisions not selectable for orders |
-| 10-20 | pending | |
+| 10 Strategic combat | done | `tests/test_step10_combat.gd`: Combat autoload + daily systems after movement, hook set; combat math (attack, artillery support +20%, mountain attack -25% / defense up, entrenchment +25%, HP strength factor, damage formula + ratio clamp); entrenchment/org/HP recovery, no entrenchment while moving; attack on Poland: battle_started on arrival, attackers wait in origin, 0-HP division destroyed, save/load mid-battle, attacker win -> capture (controller changes, owner keeps claim), province_captured, defenders without retreat destroyed, stats; undefended province captured on arrival without battle; lone artillery vs entrenched mountain defender loses and stops; Soviet defender retreats to adjacent Soviet province; stopping the attacker ends the battle; UI: no fronts at peace, Berlin-Poland front at war, battle marker, info panel BattleInfo + Bar_Battle only on the battle province |
+| 11-20 | pending | |
 
 ## Architecture
 
@@ -226,6 +227,36 @@ tests/                   test_base.gd harness, test_stepN_*.gd, run_all.ps1, log
 - InfoPanel division view: `Eta` label ("Arrives in N days"), `Bar_Move`, `MoveHint` (player divisions, with group size
   `group_size`), `StopButton` while moving; back button emits `divisions_selected([])`. Rebuilds on `division_order_changed`.
 
+### Combat (step 10)
+- **Combat** autoload (`scripts/autoload/combat.gd`, after Movement) sets `Movement.hostile_entry` and registers
+  `Simulation.register_daily("combat", run_daily, 45)` and `("combat_recovery", run_recovery, 50)`.
+- A division reaching full progress towards a hostile province: no enemy divisions there -> it enters and the province is
+  captured on `division_moved`; otherwise it starts/joins the battle and is held at progress 1.0 in its own province.
+- Battles live in **`GameState.battles`** (pid -> `{province, attacker, defender, attackers: [ids], days, start_day}`), saved in
+  `to_dict()` under `"battles"`. Defenders are recomputed each tick (divisions in the province owned by nations at war with
+  the attacker); attackers = listed ids still having `path[0] == pid`.
+- Daily tick: damage = `combat_damage_scale` x attack x clamp(attack / enemy defense, `combat_ratio_min`, `combat_ratio_max`),
+  split evenly; each point costs `combat_org_per_damage` org and `combat_hp_per_damage` HP. Attack/defense summed over
+  divisions x `strength(d)` (1 - `combat_hp_strength_weight` x lost HP fraction); attacker attack x (1 + artillery support) x
+  (1 + terrain attack_modifier); defender defense x (1 + terrain defense_bonus + entrenchment x `entrenchment_defense_bonus`).
+  0 HP -> destroyed; defender at 0 org -> retreats to an adjacent passable province (prefers no battle), destroyed if none;
+  attacker at 0 org -> `Movement.stop`. No defenders -> attackers enter via `Movement.enter_province` (new helper) and the
+  province is captured; no attackers -> defender holds.
+- Capture changes **controller only** (owner keeps its claim, shown as occupied); stats `provinces_conquered`,
+  `battles_won/lost`, `divisions_lost` updated.
+- Recovery: entrenchment +`entrenchment_per_day` for non-moving divisions (max 1); out of battle org +`org_recovery_per_day`
+  x max, HP +`hp_recovery_per_day` x max in own-controlled provinces. **Step 11** attrition should coordinate with this.
+- API: `has_battle(pid)`, `battle_at(pid)`, `attackers(pid)`, `defenders(pid, attacker_nid)`, `is_in_battle(d)`,
+  `powers(pid, atk, dfs)` (typed `Array[DivisionState]`), `damage(attack, defense)`, `strength(d)`, `balance(pid)` (attacker
+  org share 0..1), `capture(pid, nid)`, `retreat(d)`, `destroy(d)`.
+- Signals emitted: `battle_started(pid)`, `battle_ended(pid, attacker_won)`, `province_captured(pid, new, old)`,
+  `province_changed`, `division_destroyed`, `division_moved` (entry/retreat), `notify` for the player.
+- Map: `_draw_fronts` draws red front lines (`front_borders()` = border keys between at-war controllers) and a red outline
+  around battle provinces; `_draw_units` draws a crossed-swords marker (`battle_markers()`). InfoPanel province view has a
+  "Battle" section (`BattleInfo` label, `Bar_Battle`).
+- **Steps 15-17**: major-city battles currently auto-resolve; hook the tactical prompt where `_on_hostile_entry` starts a battle
+  and add a result-applying API. **Step 13/19**: capital capture does not yet cause capitulation.
+
 ### Autoloads (order matters: later ones may use earlier ones)
 1. **EventBus** (`scripts/autoload/event_bus.gd`): signals only. All signals for later steps are already declared:
    `game_state_ready`, `game_over(result)`, `hour_passed(hour)`, `day_passed(day_index)`, `month_passed(year, month)`,
@@ -289,7 +320,9 @@ All have `to_dict()` / `static from_dict()`; add new fields to both when extendi
 ## Known issues
 - No functional bugs known.
 - Git prints "CRLF will be replaced by LF" warnings on commit (.gitattributes normalises line endings); harmless.
-- The Fronts / Fog map layers are intentionally empty until steps 10 / 12 (Units drawn since step 8).
+- The Fog map layer is intentionally empty until step 12 (Units drawn since step 8, Fronts since step 10).
+- Combat balance (rules.json combat_* keys) is first-pass; lone divisions attacking entrenched defenders usually lose. Step 20 may tune.
+- Captured provinces stay owned by the original nation (occupation) until capitulation is implemented.
 - Movement is daily (as specified for step 9), so divisions jump province to province at day boundaries; the arrow's
   progress dot shows partial progress. Enemy/AI move orders are not drawn.
 - Headless test windows are smaller than the 1920x1080 viewport, so tests call `MapView._unhandled_input(ev)` directly
