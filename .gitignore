@@ -1,0 +1,31 @@
+# Godot 4 cache / generated data
+.godot/
+/android/
+
+# Local tools (portable Godot binary lives here - never commit it)
+/tools/
+
+# Build output
+/build/
+/export/
+
+# Editor backup / temp files
+*~
+*.bak
+*.orig
+*.swp
+*.swo
+*.tmp
+*.TMP
+\#*\#
+.vscode/
+.idea/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# Test logs
+/tests/logs/
