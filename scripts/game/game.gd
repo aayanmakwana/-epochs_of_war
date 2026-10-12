@@ -7,6 +7,88 @@ extends Node
 @onready var ui_layer: CanvasLayer = $UI
 @onready var hud: Hud = $UI/HUD
 
+# --- Pause menu (step 18) -------------------------------------------------------
+var _pause_layer: CanvasLayer = null
+var pause_menu: Control = null
+
+
+func _build_pause_menu() -> void:
+	_pause_layer = CanvasLayer.new()
+	_pause_layer.name = "PauseMenuLayer"
+	_pause_layer.layer = 20
+	add_child(_pause_layer)
+
+	var bg := ColorRect.new()
+	bg.name = "PauseMenu"
+	bg.color = Color(0, 0, 0, 0.6)
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	_pause_layer.add_child(bg)
+	pause_menu = bg
+
+	var box := VBoxContainer.new()
+	box.set_anchors_preset(Control.PRESET_CENTER)
+	box.custom_minimum_size = Vector2(240, 0)
+	bg.add_child(box)
+
+	var title := Label.new()
+	title.text = "PAUSED"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(title)
+
+	var sep := Control.new()
+	sep.custom_minimum_size = Vector2(0, 16)
+	box.add_child(sep)
+
+	var btn_save := Button.new()
+	btn_save.name = "SaveButton"
+	btn_save.text = "Save Game"
+	btn_save.pressed.connect(func() -> void:
+		var sl := get_node_or_null("/root/SaveLoad")
+		if sl:
+			sl.save_game()
+	)
+	box.add_child(btn_save)
+
+	var btn_load := Button.new()
+	btn_load.name = "LoadButton"
+	btn_load.text = "Load Game"
+	btn_load.pressed.connect(func() -> void:
+		var sl := get_node_or_null("/root/SaveLoad")
+		if sl and sl.has_save():
+			sl.load_game()
+			hide_pause_menu()
+	)
+	box.add_child(btn_load)
+
+	var btn_resume := Button.new()
+	btn_resume.name = "ResumeButton"
+	btn_resume.text = "Resume"
+	btn_resume.pressed.connect(hide_pause_menu)
+	box.add_child(btn_resume)
+
+
+func show_pause_menu() -> void:
+	if _pause_layer == null:
+		_build_pause_menu()
+	_pause_layer.visible = true
+	TimeManager.pause()
+
+
+func hide_pause_menu() -> void:
+	if _pause_layer != null:
+		_pause_layer.visible = false
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_ESCAPE and tactical_view == null:
+			if _pause_layer != null and _pause_layer.visible:
+				hide_pause_menu()
+			else:
+				show_pause_menu()
+			get_viewport().set_input_as_handled()
+
 
 func _ready() -> void:
 	camera.setup(GameData.geometry.bounds())

@@ -32,6 +32,7 @@ Supply="*res://scripts/autoload/supply.gd"
 Fog="*res://scripts/autoload/fog.gd"
 Diplomacy="*res://scripts/autoload/diplomacy.gd"
 AI="*res://scripts/autoload/ai.gd"
+SaveLoad="*res://scripts/autoload/save_load.gd"
 
 [display]
 
