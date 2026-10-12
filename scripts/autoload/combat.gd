@@ -307,6 +307,8 @@ func _tick(pid: String) -> void:
 	var b: Dictionary = GameState.battles[pid]
 	if bool(b.get("tactical", false)):
 		return   # the player commands this battle on the tactical map (step 17)
+	if pending_prompts.has(pid) and int(b.get("start_day", -1)) == GameState.day_index:
+		return   # prompt just raised: no auto-resolve damage before the player answers
 	var atk := attackers(pid)
 	var dfs := defenders(pid, b.attacker)
 	if atk.is_empty() or dfs.is_empty():

@@ -17,6 +17,62 @@ func _ready() -> void:
 		camera.focus_on(GameData.geometry.anchors[capital].lerp(GameData.geometry.bounds().get_center(), 0.5))
 	EventBus.tactical_battle_requested.connect(open_tactical)
 	EventBus.game_state_ready.connect(close_tactical)
+	EventBus.tactical_prompt_requested.connect(show_prompt)
+	EventBus.game_state_ready.connect(_clear_prompts)
+	prompt_dialog = ConfirmationDialog.new()
+	prompt_dialog.name = "TacticalPrompt"
+	prompt_dialog.title = "City battle"
+	prompt_dialog.ok_button_text = "Yes"
+	prompt_dialog.cancel_button_text = "No"
+	prompt_dialog.confirmed.connect(func() -> void: answer_prompt(true))
+	prompt_dialog.canceled.connect(func() -> void: answer_prompt(false))
+	add_child(prompt_dialog)
+
+
+# --- "Battle for X. Command your forces?" prompt (step 17) ----------------------------
+
+var prompt_dialog: ConfirmationDialog
+## Province of the prompt on screen ("" = none) and those waiting behind it.
+var prompt_province: String = ""
+var _prompt_queue: Array[String] = []
+
+
+func show_prompt(pid: String) -> void:
+	if pid == prompt_province or _prompt_queue.has(pid):
+		return
+	if prompt_province != "":
+		_prompt_queue.append(pid)
+		return
+	prompt_province = pid
+	prompt_dialog.dialog_text = "Battle for %s. Command your forces?" % GameData.province_name(pid)
+	prompt_dialog.popup_centered()
+
+
+## Yes -> tactical view (Combat.accept_tactical); No -> auto-resolve and resume the clock.
+func answer_prompt(yes: bool) -> void:
+	var pid := prompt_province
+	if pid == "":
+		return
+	prompt_province = ""
+	if prompt_dialog.visible:
+		prompt_dialog.hide()
+	var combat := get_node_or_null("/root/Combat")
+	if yes and combat and combat.accept_tactical(pid):
+		pass
+	else:
+		if combat:
+			combat.decline_tactical(pid)
+		if _prompt_queue.is_empty():
+			TimeManager.resume()
+	if not _prompt_queue.is_empty():
+		show_prompt(_prompt_queue.pop_front())
+
+
+func _clear_prompts() -> void:
+	prompt_province = ""
+	_prompt_queue.clear()
+	if prompt_dialog and prompt_dialog.visible:
+		prompt_dialog.hide()
 
 
 # --- Tactical view (step 15) ---------------------------------------------------------
@@ -38,7 +94,12 @@ func open_tactical(pid: String) -> void:
 	add_child(_tactical_layer)
 	tactical_view = (load(TACTICAL_SCENE) as PackedScene).instantiate()
 	_tactical_layer.add_child(tactical_view)
-	tactical_view.closed.connect(func(_p: String) -> void: close_tactical())
+	var view := tactical_view
+	tactical_view.closed.connect(func(_p: String) -> void:
+		var done := view.phase == "finished"
+		close_tactical()
+		if done:
+			TimeManager.resume())   # results applied: back to the map, clock running
 	$World.visible = false
 	$World.process_mode = Node.PROCESS_MODE_DISABLED
 	ui_layer.visible = false

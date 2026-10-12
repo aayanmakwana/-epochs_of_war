@@ -428,8 +428,11 @@ func start_battle() -> void:
 	if deployment == null or phase != "deployment":
 		return
 	battle = TacticalBattle.new(deployment, GameData.tactical)
-	battle.start()
+	battle.finished.connect(_on_battle_finished)
 	phase = "battle"
+	battle.start()
+	if phase != "battle":
+		return
 	grid.battle = battle
 	hint_label.text = ""
 	if battle.active_side != player_side:
@@ -439,8 +442,11 @@ func start_battle() -> void:
 
 
 func _run_enemy_phase() -> void:
+	if battle == null or battle.is_finished:
+		return
 	TacticalAI.run_phase(battle, battle.active_side)
-	battle.end_phase()
+	if not battle.is_finished:
+		battle.end_phase()
 	turn = battle.turn
 
 
@@ -450,6 +456,8 @@ func end_player_phase() -> void:
 		return
 	battle.end_phase()
 	_run_enemy_phase()
+	if phase != "battle":
+		return
 	turn = battle.turn
 	select_unit(-1)
 	_refresh()
@@ -608,8 +616,33 @@ func tile_text(t: Vector2i) -> String:
 	return "\n".join(lines)
 
 
+## Leave the view. Before the battle ended this is an early exit: the losses so
+## far are applied (Combat.abandon_tactical) and the strategic battle auto-resolves.
 func close() -> void:
+	if phase != "finished":
+		var combat := get_node_or_null("/root/Combat")
+		if combat and province != "":
+			combat.abandon_tactical(province, battle.result().casualties if battle else {})
 	closed.emit(province)
+
+
+## Result of the finished battle (step 17), kept for the caller / tests.
+var last_result: Dictionary = {}
+
+
+## The TacticalBattle ended: apply the result to the strategic divisions
+## (Combat.apply_tactical_result, casualties keyed by division id), report it and
+## return to the map.
+func _on_battle_finished(winner: String, _reason: String) -> void:
+	phase = "finished"
+	last_result = battle.result()
+	var combat := get_node_or_null("/root/Combat")
+	if combat and province != "":
+		combat.apply_tactical_result(province, winner == "attacker", last_result.casualties)
+	var won := winner == player_side
+	EventBus.notify.emit("Battle for %s: %s (%s)" % [GameData.province_name(province),
+		"victory" if won else "defeat", str(last_result.reason).replace("_", " ")])
+	close.call_deferred()
 
 
 func _refresh() -> void:
