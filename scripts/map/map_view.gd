@@ -56,6 +56,14 @@ func _ready() -> void:
 		if ids.is_empty():
 			clear_unit_selection())
 	EventBus.game_state_ready.connect(func() -> void: selected_divisions.clear())
+	# Step 10: fronts and battle markers.
+	for sig in ["battle_started", "battle_ended", "province_captured", "war_declared"]:
+		EventBus.connect(sig, _on_battles_changed)
+
+
+func _on_battles_changed(_a: Variant = null, _b: Variant = null, _c: Variant = null) -> void:
+	refresh_layer("Fronts")
+	refresh_layer("Units")
 
 
 ## (Re)create all child nodes from the geometry.
@@ -334,6 +342,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _on_province_changed(pid: String) -> void:
 	_update_fill(pid)
 	refresh_layer("Borders")
+	refresh_layer("Fronts")
 
 
 func _on_view_changed() -> void:
@@ -394,8 +403,60 @@ func _draw_highlight(canvas: CanvasItem) -> void:
 			canvas.draw_polyline(closed, SELECT_LINE, px(2.5), true)
 
 
-func _draw_fronts(_canvas: CanvasItem) -> void:
-	pass  # Step 10: front lines between provinces of nations at war.
+const FRONT_LINE := Color(0.9, 0.12, 0.08, 0.9)
+const BATTLE_LINE := Color(1, 0.2, 0.15, 1)
+
+
+## Step 10: border keys ("a|b") between land provinces whose controllers are at war.
+func front_borders() -> Array:
+	var out: Array = []
+	if not GameState.active:
+		return out
+	for key: String in geometry.borders:
+		var parts := key.split("|")
+		if parts.size() < 2 or parts[1] == "" or GameData.is_naval(parts[0]) or GameData.is_naval(parts[1]):
+			continue
+		var ca := _controller(parts[0])
+		var cb := _controller(parts[1])
+		var na: NationState = GameState.nation(ca)
+		if ca != cb and na and na.is_at_war_with(cb):
+			out.append(key)
+	return out
+
+
+## Step 10: provinces with an active battle -> {province, pos} (crossed swords).
+func battle_markers() -> Array:
+	var out: Array = []
+	if not GameState.active:
+		return out
+	var pids: Array = GameState.battles.keys()
+	pids.sort()
+	for pid in pids:
+		if geometry.anchors.has(pid):
+			out.append({"province": pid, "pos": geometry.anchors[pid] + Vector2(0, -38)})
+	return out
+
+
+func _draw_fronts(canvas: CanvasItem) -> void:
+	for key: String in front_borders():
+		for seg: PackedVector2Array in geometry.borders[key]:
+			canvas.draw_polyline(seg, FRONT_LINE, px(3.5), true)
+	for m: Dictionary in battle_markers():
+		for loop: PackedVector2Array in geometry.outlines.get(m.province, []):
+			var closed := loop.duplicate()
+			closed.append(loop[0])
+			canvas.draw_polyline(closed, BATTLE_LINE, px(3.0), true)
+
+
+func _draw_battle_marker(canvas: CanvasItem, pos: Vector2) -> void:
+	canvas.draw_circle(pos, 12.0, Color(0, 0, 0, 0.85))
+	canvas.draw_circle(pos, 10.5, Color(0.75, 0.1, 0.08))
+	var w := 2.5
+	for s in [-1.0, 1.0]:
+		var a := pos + Vector2(-6.5 * s, -6.5)
+		var b := pos + Vector2(6.5 * s, 6.5)
+		canvas.draw_line(a, b, Color.WHITE, w, true)
+		canvas.draw_line(b + Vector2(-2.5 * s, 1.0), b + Vector2(1.0 * s, -2.5), Color.WHITE, w, true)
 
 
 ## Step 8: one counter box per (province, owner) below the city marker,
@@ -507,6 +568,8 @@ func _draw_units(canvas: CanvasItem) -> void:
 		var text_col := Color.BLACK if col.get_luminance() > 0.55 else Color.WHITE
 		canvas.draw_string(font, Vector2(r.position.x, r.position.y + 14.0), txt,
 			HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 13, text_col)
+	for m: Dictionary in battle_markers():
+		_draw_battle_marker(canvas, m.pos)
 
 
 func _on_divisions_changed(_a: Variant = null, _b: Variant = null, _c: Variant = null) -> void:

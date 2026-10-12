@@ -16,6 +16,10 @@ var provinces: Dictionary = {}    # id -> ProvinceState
 var nations: Dictionary = {}      # id -> NationState
 var divisions: Dictionary = {}    # int id -> DivisionState
 var next_division_id: int = 1
+## Running strategic battles (step 10, driven by the Combat autoload):
+## province id -> {"province", "attacker", "defender", "attackers": Array[int],
+## "days": int, "start_day": int}. Saved with the game.
+var battles: Dictionary = {}
 var rng_seed: int = 0
 var game_over: bool = false
 ## Real seconds spent in this game (end screen "time played", step 19).
@@ -31,6 +35,7 @@ func reset() -> void:
 	nations.clear()
 	divisions.clear()
 	next_division_id = 1
+	battles.clear()
 	rng_seed = 0
 	game_over = false
 	time_played = 0.0
@@ -192,6 +197,7 @@ func to_dict() -> Dictionary:
 		"provinces": p_out,
 		"nations": n_out,
 		"divisions": d_out,
+		"battles": battles.duplicate(true),
 	}
 
 
@@ -220,6 +226,20 @@ func load_from_dict(d: Dictionary) -> bool:
 		var dv := DivisionState.from_dict(dd)
 		divisions[dv.id] = dv
 		next_division_id = maxi(next_division_id, dv.id + 1)
+	var b_in: Dictionary = d.get("battles", {})
+	for pid in b_in:
+		var b: Dictionary = b_in[pid]
+		var ids: Array = []
+		for did in b.get("attackers", []):
+			ids.append(int(did))
+		battles[String(pid)] = {
+			"province": String(b.get("province", pid)),
+			"attacker": String(b.get("attacker", "")),
+			"defender": String(b.get("defender", "")),
+			"attackers": ids,
+			"days": int(b.get("days", 0)),
+			"start_day": int(b.get("start_day", 0)),
+		}
 	if provinces.size() != GameData.province_ids.size() or nations.size() != GameData.nation_ids.size():
 		reset()
 		return false

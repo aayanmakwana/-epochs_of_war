@@ -163,6 +163,8 @@ func _build_province(pid: String) -> void:
 		occ.name = "Occupied"
 		content.add_child(occ)
 
+	_build_battle(pid)
+
 	# Terrain
 	var terrain: Dictionary = GameData.terrain_of(pid)
 	content.add_child(UIStyle.section_header("Terrain"))
@@ -214,6 +216,23 @@ func _build_province(pid: String) -> void:
 		content.add_child(scroll)
 	else:
 		content.add_child(garrison)
+
+
+## Step 10: battle progress for a province under attack.
+func _build_battle(pid: String) -> void:
+	var combat := get_node_or_null("/root/Combat")
+	if combat == null or not GameState.active or not combat.has_battle(pid):
+		return
+	var b: Dictionary = combat.battle_at(pid)
+	content.add_child(UIStyle.section_header("Battle"))
+	var bal: float = combat.balance(pid)
+	var txt := "%s attacks %s - day %d\nAttackers: %d divisions   Defenders: %d divisions\nAttacker advantage: %d%%" % [
+		GameData.nation_name(b.attacker), GameData.nation_name(b.defender), int(b.days),
+		combat.attackers(pid).size(), combat.defenders(pid, b.attacker).size(), roundi(bal * 100.0)]
+	var lbl := UIStyle.label(txt, 14, UIStyle.BAD)
+	lbl.name = "BattleInfo"
+	content.add_child(lbl)
+	content.add_child(_bar("Battle", bal, UIStyle.BAD))
 
 
 func _province_subtitle(pid: String, owner_id: String) -> String:

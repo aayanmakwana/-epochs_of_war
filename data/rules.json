@@ -17,5 +17,16 @@
 	"movement_base_days": 16.0,
 	"infrastructure_move_bonus": 0.1,
 	"attrition_per_day": 0.02,
+	"_combat_comment": "Strategic combat (step 10), resolved once per in-game day. damage = combat_damage_scale x side attack x clamp(side attack / enemy defense, combat_ratio_min, combat_ratio_max), split evenly over the enemy divisions; each point costs combat_org_per_damage organization and combat_hp_per_damage HP. Division strength factor = 1 - combat_hp_strength_weight x (1 - hp / max hp). Entrenchment grows entrenchment_per_day for divisions that are not moving (max 1) and adds up to entrenchment_defense_bonus to defense. Out of battle divisions recover org_recovery_per_day x max organization and (in own territory) hp_recovery_per_day x max HP each day.",
+	"combat_damage_scale": 1.8,
+	"combat_ratio_min": 0.25,
+	"combat_ratio_max": 4.0,
+	"combat_org_per_damage": 1.0,
+	"combat_hp_per_damage": 0.4,
+	"combat_hp_strength_weight": 0.5,
+	"entrenchment_per_day": 0.1,
+	"entrenchment_defense_bonus": 0.25,
+	"org_recovery_per_day": 0.1,
+	"hp_recovery_per_day": 0.02,
 	"major_city_count": 5
 }

@@ -27,6 +27,7 @@ Production="*res://scripts/autoload/production.gd"
 Research="*res://scripts/autoload/research.gd"
 Recruitment="*res://scripts/autoload/recruitment.gd"
 Movement="*res://scripts/autoload/movement.gd"
+Combat="*res://scripts/autoload/combat.gd"
 
 [display]
 

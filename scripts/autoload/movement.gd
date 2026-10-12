@@ -199,8 +199,18 @@ func _advance(d: DivisionState) -> void:
 		return
 	if hostile and hostile_entry.is_valid() and not bool(hostile_entry.call(d, next)):
 		return
+	enter_province(d, next)
+
+
+## Move [param d] into path[0] (== [param next]) now: origin/province update,
+## progress and entrenchment reset, division_moved (+ division_order_changed
+## when the path is finished). Also used by Combat when attackers win.
+func enter_province(d: DivisionState, next: String) -> void:
 	var from := d.province
-	d.path.pop_front()
+	if not d.path.is_empty() and d.path[0] == next:
+		d.path.pop_front()
+	else:
+		d.path.clear()
 	d.province = next
 	d.origin = from
 	d.move_progress = 0.0
