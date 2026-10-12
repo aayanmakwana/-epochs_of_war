@@ -19,7 +19,8 @@ Run all tests: `powershell -ExecutionPolicy Bypass -File tests\run_all.ps1`
 | 8 Military recruitment | done | `tests/test_step8_recruitment.gd`: Recruitment autoload + daily system after research; refusals (armor without light tanks, naval zone, foreign/occupied province, unknown template, manpower/equipment shortage with reason, refused recruit changes nothing); default deploy = capital, deploy list = owned+controlled land provinces; exact costs paid up front (manpower, equipment); cancel refunds; nothing one day early, division created on day 30 in the chosen province with `division_created` + player notify; lost deploy province falls back to the capital; queue save round trip; AI/minor nations train too; UI (panel in Production tab, 3 buttons with cost text, default capital, map selection of an owned province sets deploy, foreign ignored, dropdown, button recruits into chosen province, queue row cancel, disabled + reason tooltip); map unit icons (per province/owner box, count, type letters, follows new divisions) |
 | 9 Division movement | done | `tests/test_step9_movement.gd`: Movement autoload + daily system after recruitment; BFS paths (adjacent, 2-hop, none into neutral/foreign/UK sea/own province, UK may enter its sea), refusal reasons (naval, not friendly, already there), refused order changes nothing; military access opens land provinces (multi-hop through access), adjacent at-war enemy province is a valid final target but not passable; travel days (infantry 4 speed, forest 6 d, urban infra 5 4 d, armor faster, artillery slower); order -> path + `division_order_changed`, ETA, 75% after 3 of 4 days, arrival on the exact day with origin + `division_moved(id, from, to)`, progress reset; save/load mid-move keeps path + progress, nothing one day early; stop; target lost -> halt + player notify; intermediate lost -> reroute to same destination; capitulated frozen; UI: garrison button selects division for orders + move hint, click on foreign province refused with notify (selection kept), click on valid province orders without changing province selection, Stop button / ETA / orders text, movement arrow points/selected/progress, right-click orders, Escape clears unit selection, unit icon click selects all player divisions there (info panel group size) + group order, province selection clears unit selection, foreign divisions not selectable for orders |
 | 10 Strategic combat | done | `tests/test_step10_combat.gd`: Combat autoload + daily systems after movement, hook set; combat math (attack, artillery support +20%, mountain attack -25% / defense up, entrenchment +25%, HP strength factor, damage formula + ratio clamp); entrenchment/org/HP recovery, no entrenchment while moving; attack on Poland: battle_started on arrival, attackers wait in origin, 0-HP division destroyed, save/load mid-battle, attacker win -> capture (controller changes, owner keeps claim), province_captured, defenders without retreat destroyed, stats; undefended province captured on arrival without battle; lone artillery vs entrenched mountain defender loses and stops; Soviet defender retreats to adjacent Soviet province; stopping the attacker ends the battle; UI: no fronts at peace, Berlin-Poland front at war, battle marker, info panel BattleInfo + Bar_Battle only on the battle province |
-| 11-20 | pending | |
+| 11 Supply system | done | `tests/test_step11_supply.gd`: Supply autoload + daily system between combat and combat_recovery; all provinces in supply at start (UK Mediterranean excepted, see known issues); source = capital; isolated German-held Moscow cut off (`cut_off_provinces`), USSR without Moscow has no supply; military access reconnects Ukraine via Poland; losing Berlin cuts all German supply; attrition exact (-2% max HP, -5% max org per day), in-supply divisions recover while cut-off ones don't, player notify on loss/restore, supply survives save/load, `supply_changed` after reconnect, no attrition once supplied, destroyed at 0 HP, AI divisions take attrition, capitulated skipped; UI: overlay list, "In supply" yes/no in province (controller's supply) and division views |
+| 12-20 | pending | |
 
 ## Architecture
 
@@ -257,6 +258,25 @@ tests/                   test_base.gd harness, test_stepN_*.gd, run_all.ps1, log
 - **Steps 15-17**: major-city battles currently auto-resolve; hook the tactical prompt where `_on_hostile_entry` starts a battle
   and add a result-applying API. **Step 13/19**: capital capture does not yet cause capitulation.
 
+### Supply (step 11)
+- **Supply** autoload (`scripts/autoload/supply.gd`, after Combat). A province is in supply for a nation if a BFS from the
+  nation's capital (only if it controls it; `source(nid)`, else "") reaches it through `Movement.is_passable` provinces
+  (controlled, or land provinces of nations granting military access; naval zones only if controlled).
+  **Derived on demand, no cache, no save data.**
+- Daily system `"supply"` (order 48, after combat 45, before combat_recovery 50): divisions of non-capitulated nations in
+  unsupplied provinces lose `rules.attrition_per_day` (0.02) x max HP and `attrition_org_per_day` (0.05) x max org;
+  0 HP -> `Combat.destroy`. `Combat.run_recovery` skips org/HP recovery for out-of-supply divisions (entrenchment still grows).
+  Player notify: "N division(s) out of supply in X" (on transition) and "Supply restored in X".
+- New signal `EventBus.supply_changed(nation_id)`: emitted (deferred) when a nation's supplied set changes after
+  `province_changed` / `military_access_granted` / `nation_capitulated`, and at the end of each daily tick.
+- API: `supplied_set(nid)` (pid -> true), `supplied_provinces`, `is_province_supplied(nid, pid)`, `cut_off_provinces(nid)`
+  (controlled but unsupplied), `is_supplied(d)`, `out_of_supply_divisions(nid)`, `attrition_hp(d)`, `attrition_org(d)`,
+  `status_text(d)`, `is_friendly(nid, pid)`. **AI (step 14)** can use `cut_off_provinces` / `out_of_supply_divisions`.
+- UI: `MapView.out_of_supply_provinces()` (player's cut-off provinces) drawn in the Fronts layer as a dark fill with orange
+  diagonal hatch clipped to the outline (`_draw_supply_overlay`); refreshes on `supply_changed` / `province_changed`.
+  InfoPanel: `SupplyGrid` row "In supply" yes/no in the province view (supply of the province's controller, land and sea)
+  and an "In supply" row in the division StatsGrid ("no (-N HP/day)"). **Step 12**: hide the overlay/rows for fogged provinces if needed.
+
 ### Autoloads (order matters: later ones may use earlier ones)
 1. **EventBus** (`scripts/autoload/event_bus.gd`): signals only. All signals for later steps are already declared:
    `game_state_ready`, `game_over(result)`, `hour_passed(hour)`, `day_passed(day_index)`, `month_passed(year, month)`,
@@ -319,6 +339,9 @@ All have `to_dict()` / `static from_dict()`; add new fields to both when extendi
 
 ## Known issues
 - No functional bugs known.
+- Supply (step 11): the Mediterranean (UK) touches neither London nor the North Sea, so it is always out of supply for the UK
+  (UK divisions moved there take attrition; a UK player sees it hatched). Strict reading of the spec; step 20 may add sea
+  lanes between controlled naval zones. Out-of-supply divisions have no combat penalty beyond attrition.
 - Git prints "CRLF will be replaced by LF" warnings on commit (.gitattributes normalises line endings); harmless.
 - The Fog map layer is intentionally empty until step 12 (Units drawn since step 8, Fronts since step 10).
 - Combat balance (rules.json combat_* keys) is first-pass; lone divisions attacking entrenched defenders usually lose. Step 20 may tune.

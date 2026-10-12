@@ -88,6 +88,7 @@ The build follows the 20-step Build Order in the design document.
 | 8 | Military recruitment (recruit from the Production tab, training queue, unit icons on the map) | done |
 | 9 | Division movement (select a division, click/right-click a destination, paths through friendly territory, travel time by speed and terrain, movement arrows) | done |
 | 10 | Strategic combat (battles on entering defended enemy provinces, daily damage from attack vs defense with terrain/entrenchment/artillery, retreat or destruction, province capture, front lines and battle markers) | done |
-| 11-20 | Supply ... polish | pending |
+| 11 | Supply system (provinces connected to the capital through friendly territory are in supply; out-of-supply divisions take daily HP/organization attrition; hatched map overlay and "In supply" info rows) | done |
+| 12-20 | Fog of war ... polish | pending |
 
 See [`PROGRESS.md`](PROGRESS.md) for details and architecture notes.
